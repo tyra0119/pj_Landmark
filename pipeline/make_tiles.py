@@ -15,7 +15,7 @@ import shutil
 import numpy as np
 from PIL import Image
 
-from common import CACHE, GRID_ZOOM, LANDMARK, WEB, bbox_lonlat, grid_spec
+from common import GRID_ZOOM, LANDMARK, OUT, WEB, bbox_lonlat, grid_spec
 
 MIN_ZOOM = 12
 # index = class; 0 = tip hidden, 1..7 = more of the tower visible
@@ -82,7 +82,7 @@ def write_deck_tiles(deck, x0, y0, out):
 def main():
     g = grid_spec()
     version = f"{datetime.datetime.now():%Y%m%d%H%M}"
-    classes = np.load(CACHE / "classes.npy")
+    classes = np.load(OUT / "classes.npy")
     out = WEB / "tiles" / LANDMARK["id"]
     shutil.rmtree(out, ignore_errors=True)
 
@@ -100,11 +100,11 @@ def main():
 
     deck_out = WEB / "tiles" / f"{LANDMARK['id']}-deck"
     shutil.rmtree(deck_out, ignore_errors=True)
-    deck_keys = write_deck_tiles(np.load(CACHE / "deck.npy"), g["x0"], g["y0"], deck_out)
+    deck_keys = write_deck_tiles(np.load(OUT / "deck.npy"), g["x0"], g["y0"], deck_out)
     print(f"deck: {len(deck_keys)} tiles")
 
-    meta = json.loads((CACHE / "visibility_meta.json").read_text(encoding="utf-8"))
-    files = json.loads((CACHE / "bldg" / "files.json").read_text(encoding="utf-8"))
+    meta = json.loads((OUT / "visibility_meta.json").read_text(encoding="utf-8"))
+    files = json.loads((OUT / "files_bldg.json").read_text(encoding="utf-8"))
     meta.update({
         "generated": datetime.date.today().isoformat(),
         # the query string makes browsers drop old tiles after a rebuild
@@ -115,6 +115,7 @@ def main():
         "min_zoom": MIN_ZOOM,
         "bounds": bbox_lonlat(),
         "palette": PALETTE,
+        "view_tiles": "tiles/bldg3d",
         "plateau_years": sorted({f"{f['city']}:{f['year']}" for f in files}),
     })
     data = WEB / "data"

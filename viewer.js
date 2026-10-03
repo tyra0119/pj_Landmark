@@ -9,9 +9,6 @@
   const CORRIDOR_M = 350;    // and within this distance of the line to the tower
   const FAR = 60000;
   const MOON_DIST = 40000;   // where the moon/sun disk is placed for projection
-  // rough Skytree silhouette: [bottom, top, radius] in metres above its base
-  const TOWER = [[0, 60, 34], [60, 160, 30], [160, 250, 26], [250, 320, 22], [320, 352, 27],
-    [352, 440, 17], [440, 452, 19], [452, 495, 12], [495, 600, 3], [600, 634, 1.6]];
 
   let deckLib = null;
   let deckgl = null;
@@ -56,7 +53,7 @@
   // ---------- building tiles ----------
   async function neededTiles(spot, target, dist, bearing) {
     if (!tileIndex) {
-      const meta = await (await fetch(`tiles/${window.viewerConfig.id}-3d/index.json`)).json();
+      const meta = await (await fetch(`${window.viewerConfig.viewTiles}/index.json`)).json();
       tileIndex = { zoom: meta.zoom, keys: new Set(meta.tiles) };
     }
     const z = tileIndex.zoom;
@@ -77,7 +74,7 @@
   function loadTile(key) {
     if (!tileCache.has(key)) {
       const [x, y] = key.split('/').map(Number);
-      tileCache.set(key, fetch(`tiles/${window.viewerConfig.id}-3d/${tileIndex.zoom}/${key}.json`)
+      tileCache.set(key, fetch(`${window.viewerConfig.viewTiles}/${tileIndex.zoom}/${key}.json`)
         .then((r) => r.json())
         .then((t) => {
           const [lat0, lon0] = tileNW(x, y, tileIndex.zoom);
@@ -150,11 +147,12 @@
         getFillColor: night ? [70, 70, 80] : [150, 150, 160],
       }),
     );
+    // rough silhouette of the landmark: stacked columns [bottom, top, radius]
     const lm = window.viewerConfig.landmark;
-    TOWER.forEach(([b, t, r], i) => out.push(new ColumnLayer({
-      id: `tower-${i}`, data: [0], diskResolution: 24, radius: r, extruded: true,
+    lm.model.forEach(([b, t, r], i) => out.push(new ColumnLayer({
+      id: `tower-${i}`, data: [0], diskResolution: lm.sides, radius: r, angle: 45, extruded: true,
       getPosition: () => [lm.lon, lm.lat, lm.base + b], getElevation: () => t - b,
-      getFillColor: night ? [190, 205, 255] : [232, 236, 242], material: { ambient: night ? 0.9 : 0.5, diffuse: 0.5 },
+      getFillColor: night ? lm.night_color : lm.color, material: { ambient: night ? 0.9 : 0.5, diffuse: 0.5 },
     })));
     return out;
   }
@@ -219,15 +217,19 @@
   async function open(opts) {
     const root = $('viewer');
     root.hidden = false;
+    $('viewer-label').textContent = window.viewerConfig.landmark.short;
+    $('viewer-face').textContent = `${window.viewerConfig.landmark.short}を向く`;
     $('viewer-status').textContent = '3Dデータを読み込み中…';
     $('viewer-title').textContent = opts.title;
     const lm = window.viewerConfig.landmark;
-    const [mLat, mLon] = mPerDeg(opts.lat);
-    const dn = (lm.lat - opts.lat) * mLat, de = (lm.lon - opts.lon) * mLon;
+    const [mLatM, mLonM] = mPerDeg((lm.lat + opts.lat) / 2);
+    const dn = (lm.lat - opts.lat) * mLatM, de = (lm.lon - opts.lon) * mLonM;
     const dist = Math.hypot(dn, de);
+    // azimuth at the observer (the meridian convergence matters far away)
+    const towerAz = (Math.atan2(de, dn) / D2R - (lm.lon - opts.lon) * Math.sin((lm.lat + opts.lat) / 2 * D2R) / 2 + 360) % 360;
     ctx = {
       spot: { lat: opts.lat, lon: opts.lon }, ground: opts.ground, eye: opts.ground + 1.6, body: opts.body,
-      baseTime: opts.time, towerBearing: (Math.atan2(de, dn) / D2R + 360) % 360,
+      baseTime: opts.time, towerBearing: towerAz,
       tipAlt: Math.atan2(lm.base + lm.height - opts.ground - 1.6, dist) / D2R,
       data: { buildings: [], decks: [] },
     };
@@ -255,7 +257,7 @@
       if (!ctx || root.hidden) return;
       ctx.data = { buildings: tiles.flatMap((t) => t.buildings), decks: tiles.flatMap((t) => t.decks) };
       deckgl.setProps({ layers: layers(ctx.data) });
-      $('viewer-status').textContent = `建物 ${ctx.data.buildings.length.toLocaleString()}棟（スカイツリー方向と周囲${NEAR_M}m）`;
+      $('viewer-status').textContent = `建物 ${ctx.data.buildings.length.toLocaleString()}棟（${lm.short}の方向と周囲${NEAR_M}m）`;
     } catch (e) {
       $('viewer-status').textContent = e.message;
     }

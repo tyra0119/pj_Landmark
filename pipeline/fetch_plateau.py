@@ -20,7 +20,7 @@ from pathlib import Path
 import numpy as np
 from lxml import etree
 
-from common import CACHE, LANDMARK, RADIUS_M, bbox_lonlat
+from common import CACHE, LANDMARK, OUT, RADIUS_M, bbox_lonlat
 
 API = "https://api.plateau.reearth.io/datacatalog/citygml/r:{:.5f},{:.5f},{:.5f},{:.5f}"
 GML = "{http://www.opengis.net/gml}"
@@ -156,8 +156,8 @@ def main():
     for kind in args.kinds:
         (CACHE / kind).mkdir(parents=True, exist_ok=True)
         files = list_files(kind)
-        print(f"{kind}: {len(files)} files, {sum(f['fileSize'] for f in files) / 1e9:.2f} GB", flush=True)
-        (CACHE / kind / "files.json").write_text(json.dumps(files, ensure_ascii=False, indent=1), encoding="utf-8")
+        print(f"{kind}: {len(files)} files, {sum(f.get('fileSize', 0) for f in files) / 1e9:.2f} GB", flush=True)
+        (OUT / f"files_{kind}.json").write_text(json.dumps(files, ensure_ascii=False, indent=1), encoding="utf-8")
         with ProcessPoolExecutor(args.workers) as ex:
             futs = {ex.submit(process, kind, f): f for f in files}
             for i, fut in enumerate(as_completed(futs), 1):

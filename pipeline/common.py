@@ -3,18 +3,37 @@
 The analysis grid is the Web Mercator pixel grid at zoom GRID_ZOOM, so the
 output can be cut straight into XYZ map tiles without resampling.
 """
+import json
 import math
 import os
 from pathlib import Path
 
-# Tokyo Skytree (antenna top is 634 m above the base).
-LANDMARK = {
-    "id": "skytree",
-    "name": "東京スカイツリー",
-    "lat": 35.710139,
-    "lon": 139.810833,
-    "height": 634.0,
+# Landmarks. "levels" are heights on the landmark (above its base) tested for
+# visibility, top first; "model" is a rough silhouette for the 3D view:
+# [bottom, top, radius] in metres, drawn as stacked columns with "sides" sides.
+LANDMARKS = {
+    "skytree": {
+        "id": "skytree", "name": "東京スカイツリー", "short": "スカイツリー",
+        "lat": 35.710139, "lon": 139.810833, "height": 634.0,
+        "levels": [630.0, 500.0, 450.0, 350.0, 250.0, 150.0, 50.0],
+        "model": [[0, 60, 34], [60, 160, 30], [160, 250, 26], [250, 320, 22], [320, 352, 27],
+                  [352, 440, 17], [440, 452, 19], [452, 495, 12], [495, 600, 3], [600, 634, 1.6]],
+        "sides": 24, "color": [232, 236, 242], "night_color": [190, 205, 255],
+    },
+    "tokyotower": {
+        "id": "tokyotower", "name": "東京タワー", "short": "東京タワー",
+        "lat": 35.658581, "lon": 139.745433, "height": 333.0,
+        "levels": [330.0, 250.0, 200.0, 150.0, 100.0, 60.0, 25.0],
+        "model": [[0, 30, 44], [30, 70, 34], [70, 110, 26], [110, 140, 19], [140, 158, 22],
+                  [158, 210, 11], [210, 228, 9], [228, 270, 4], [270, 333, 1.8]],
+        "sides": 4, "color": [236, 92, 40], "night_color": [255, 150, 70],
+    },
 }
+LANDMARK = LANDMARKS[os.environ.get("LANDMARK_ID", "skytree")]
+LEVELS = LANDMARK["levels"]
+# buildings near the landmark taller than this are the landmark itself (or its parts)
+EXCLUDE_RADIUS_M = 60.0
+EXCLUDE_MIN_HEIGHT = 40.0
 
 RADIUS_M = 8000.0          # analysis radius around the landmark
 GRID_ZOOM = 16             # ~1.94 m per pixel at Tokyo's latitude
@@ -22,10 +41,9 @@ EYE_HEIGHT = 1.6           # observer eye height above ground [m]
 REFRACTION_K = 0.13        # terrestrial refraction coefficient
 EARTH_R = 6371000.0
 
-# Heights on the landmark (above its base) tested for visibility, top first.
-LEVELS = [630.0, 500.0, 450.0, 350.0, 250.0, 150.0, 50.0]
-
 CACHE = Path(os.environ.get("LANDMARK_CACHE", Path.home() / ".cache" / "landmark"))
+OUT = CACHE / LANDMARK["id"]          # per-landmark results; PLATEAU extracts are shared
+OUT.mkdir(parents=True, exist_ok=True)
 ROOT = Path(__file__).resolve().parent.parent
 WEB = ROOT / "web"
 
@@ -62,6 +80,13 @@ def grid_spec():
     x1 = int(math.ceil((float(cx) + r_px) / 256)) * 256
     y1 = int(math.ceil((float(cy) + r_px) / 256)) * 256
     return {"x0": x0, "y0": y0, "w": x1 - x0, "h": y1 - y0, "cx": float(cx) - x0, "cy": float(cy) - y0}
+
+
+def landmark_files(kind):
+    """Cached PLATEAU extracts that cover this landmark's area."""
+    listed = json.loads((OUT / f"files_{kind}.json").read_text(encoding="utf-8"))
+    paths = [CACHE / kind / f"{f['city']}_{f['code']}.npz" for f in listed]
+    return [p for p in paths if p.exists()]
 
 
 def bbox_lonlat(margin_m=0.0):

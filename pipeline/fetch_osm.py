@@ -2,7 +2,7 @@
 
 PLATEAU bridges are often typed "unknown", so OSM tells which decks belong to
 expressways or railways, where nobody can stand.
-Output: CACHE/osm_bridges.json  ({"motorway": [[[lon, lat], ...], ...], "railway": [...]})
+Output: CACHE/<landmark>/osm_bridges.json  ({"motorway": [[[lon, lat], ...], ...], "railway": [...]})
 
     python pipeline/fetch_osm.py
 """
@@ -10,7 +10,7 @@ import json
 import urllib.parse
 import urllib.request
 
-from common import CACHE, bbox_lonlat
+from common import OUT, bbox_lonlat
 
 URL = "https://overpass-api.de/api/interpreter"
 QUERY = """[out:json][timeout:120];
@@ -32,7 +32,7 @@ def main():
         if el.get("geometry"):
             kind = "motorway" if "highway" in el["tags"] else "railway"
             out[kind].append([[p["lon"], p["lat"]] for p in el["geometry"]])
-    (CACHE / "osm_bridges.json").write_text(json.dumps(out), encoding="utf-8")
+    (OUT / "osm_bridges.json").write_text(json.dumps(out), encoding="utf-8")
     print({k: len(v) for k, v in out.items()})
 
 

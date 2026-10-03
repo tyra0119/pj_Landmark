@@ -34,6 +34,7 @@ h2 { font-size: 13px; color: var(--muted); font-weight: 600; margin: 20px 0 8px;
 .small { font-size: 12px; }
 a { color: var(--accent); }
 .sheet-handle { display: none; }
+.app-name { margin: 0 0 4px; font-size: 11px; color: var(--muted); letter-spacing: 0.04em; }
 
 .controls { display: grid; gap: 12px; padding-top: 16px; }
 .segmented { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; background: rgba(255,255,255,0.06); border-radius: 10px; padding: 3px; }
@@ -113,8 +114,12 @@ a { color: var(--accent); }
 @media (max-width: 720px) {
   #panel { top: auto; left: 0; right: 0; bottom: 0; width: auto; max-height: 70vh; border-radius: 16px 16px 0 0; padding-bottom: env(safe-area-inset-bottom); }
   #panel.collapsed .panel-body { display: none; }
-  .panel-head { padding: 6px 16px 10px; }
-  .sheet-handle { display: block; margin: 0 auto 8px; width: 44px; height: 5px; border-radius: 3px; border: 0; background: rgba(255,255,255,0.3); cursor: pointer; }
+  #panel.collapsed .lead { display: none; }
+  .panel-head { padding: 0 16px 10px; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+  .sheet-handle { display: grid; place-items: center; width: 100%; height: 28px; border: 0; background: transparent; cursor: pointer; padding: 0; }
+  .sheet-handle span { width: 44px; height: 5px; border-radius: 3px; background: rgba(255,255,255,0.35); }
+  .sheet-state::after { content: "▾ 閉じる"; float: right; font-size: 12px; font-weight: 400; color: var(--muted); margin-top: 4px; }
+  #panel.collapsed .sheet-state::after { content: "▴ 開く"; }
   .panel-body { padding: 4px 16px 16px; }
   h1 { font-size: 18px; }
 }

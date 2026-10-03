@@ -7,6 +7,7 @@ PLATEAUの建物データと国土地理院の標高から、スカイツリー�
 ```bash
 pip install -r pipeline/requirements.txt
 cd pipeline
+python run_all.py tokyotower           # 下の手順をまとめて実行（取得済みなら --no-fetch）
 python fetch_plateau.py     # PLATEAU CityGML（建物・橋・水域、約22GB）を取得し、必要な形状だけ抜き出す（十数分）
 python fetch_osm.py         # OpenStreetMapから高速道路・鉄道の橋（高架）の線を取得
 python fetch_dem.py         # 地理院の標高タイル（dem5a → dem5b → dem10b）
@@ -34,4 +35,4 @@ python make_recommend.py    # 全体が見えるおすすめ地点（広く開�
 
 ## 設定
 
-`common.py` の `LANDMARK`、`RADIUS_M`、`LEVELS` などで変えられます。
+`common.py` の `LANDMARKS` にランドマーク（位置・高さ・判定する高さ・3D用の形）を定義し、環境変数 `LANDMARK_ID` で選びます。PLATEAUの抽出データは `~/.cache/landmark/<種類>/` で共有し、解析結果は `~/.cache/landmark/<ランドマーク>/` に分けて置きます。眺め用の建物タイル（`tiles/bldg3d`）は全ランドマーク共通です。

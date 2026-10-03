@@ -18,7 +18,7 @@ from collections import defaultdict
 
 import numpy as np
 
-from common import CACHE, LANDMARK, WEB
+from common import CACHE, WEB
 
 ZOOM = 15
 
@@ -80,7 +80,7 @@ def main():
                 put("d", ring, [int(round(z[k] * 10))])
                 n_d += 1
 
-    out = WEB / "tiles" / f"{LANDMARK['id']}-3d"
+    out = WEB / "tiles" / "bldg3d"   # shared by all landmarks
     shutil.rmtree(out, ignore_errors=True)
     size = 0
     for (x, y), t in tiles.items():

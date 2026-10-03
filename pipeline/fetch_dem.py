@@ -1,7 +1,7 @@
 """Build the ground-elevation grid from GSI DEM tiles (dem5a, falling back to dem10b).
 
 GSI zoom-15 DEM pixels are exactly 2x2 analysis-grid pixels at zoom 16, so the
-mosaic is upsampled by repetition. Output: CACHE/ground.npy (float32, metres T.P.).
+mosaic is upsampled by repetition. Output: CACHE/<landmark>/ground.npy (float32, metres T.P.).
 
     python pipeline/fetch_dem.py
 """
@@ -13,7 +13,7 @@ import urllib.request
 import numpy as np
 from PIL import Image
 
-from common import CACHE, GRID_ZOOM, grid_spec
+from common import CACHE, GRID_ZOOM, OUT, grid_spec
 
 URL = "https://cyberjapandata.gsi.go.jp/xyz/{layer}/15/{x}/{y}.png"
 LAYERS = ["dem5a_png", "dem5b_png", "dem10b_png"]
@@ -63,7 +63,7 @@ def main():
     up = mosaic.repeat(2, axis=0).repeat(2, axis=1)
     ox, oy = g["x0"] - tx0 * 512, g["y0"] - ty0 * 512
     ground = np.ascontiguousarray(up[oy:oy + g["h"], ox:ox + g["w"]])
-    np.save(CACHE / "ground.npy", ground)
+    np.save(OUT / "ground.npy", ground)
     print("ground grid", ground.shape, "min", ground.min(), "max", ground.max())
 
 

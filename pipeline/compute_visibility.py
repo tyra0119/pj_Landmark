@@ -12,8 +12,8 @@
    0 = tip hidden, 1 = only the tip, ..., len(LEVELS) = nearly the whole tower.
    CLS_* codes >= 252 mark cells where nobody can stand or outside RADIUS_M.
 
-Output: CACHE/classes.npy (uint8), CACHE/deck.npy (walkable deck height, NaN
-elsewhere) and CACHE/visibility_meta.json.
+Output (in CACHE/<landmark>/): classes.npy (uint8), deck.npy (walkable deck
+height, NaN elsewhere) and visibility_meta.json.
 
     python pipeline/compute_visibility.py
 """
@@ -24,8 +24,8 @@ import time
 import numpy as np
 from PIL import Image, ImageDraw
 
-from common import (CACHE, EARTH_R, EYE_HEIGHT, LANDMARK, LEVELS, RADIUS_M, REFRACTION_K,
-                    ground_res, grid_spec, world_px)
+from common import (EARTH_R, EXCLUDE_MIN_HEIGHT, EXCLUDE_RADIUS_M, EYE_HEIGHT, LANDMARK, LEVELS, OUT,
+                    RADIUS_M, REFRACTION_K, ground_res, grid_spec, landmark_files, world_px)
 
 CLS_VIADUCT = 252   # expressway / railway deck, or the street under it
 CLS_WATER = 253
@@ -44,7 +44,7 @@ def rasterise_buildings(g):
     draw = ImageDraw.Draw(img)
     polys = []
     seen = set()  # buildings on a ward boundary appear in both wards' files
-    for f in sorted((CACHE / "bldg").glob("*.npz")):
+    for f in landmark_files("bldg"):
         d = np.load(f)
         offsets, coords, base, top = d["offsets"], d["coords"], d["base"], d["top"]
         if len(top) == 0:
@@ -61,8 +61,10 @@ def rasterise_buildings(g):
             polys.append((float(top[i]), float(top[i] - base[i]), x[a:b], y[a:b]))
     print(f"{len(polys)} buildings", flush=True)
     skipped = 0
+    r_ex = EXCLUDE_RADIUS_M / ground_res()
     for top, height, x, y in sorted(polys, key=lambda p: p[0]):
-        if height > 300:  # the landmark itself
+        near = math.hypot(float(x.mean()) - g["cx"], float(y.mean()) - g["cy"]) < r_ex
+        if height > 300 or (near and height > EXCLUDE_MIN_HEIGHT):  # the landmark itself
             skipped += 1
             continue
         draw.polygon(list(zip(x.tolist(), y.tolist())), fill=top)
@@ -78,7 +80,7 @@ def to_px(coords, g):
 def rasterise_water(g):
     img = Image.new("L", (g["w"], g["h"]), 0)
     draw = ImageDraw.Draw(img)
-    for f in sorted((CACHE / "wtr").glob("*.npz")):
+    for f in landmark_files("wtr"):
         d = np.load(f)
         if len(d["interior"]) == 0:
             continue
@@ -96,7 +98,7 @@ def rasterise_osm(g):
     res = ground_res()
     img = Image.new("F", (g["w"], g["h"]), 0)
     draw = ImageDraw.Draw(img)
-    data = json.loads((CACHE / "osm_bridges.json").read_text(encoding="utf-8"))
+    data = json.loads((OUT / "osm_bridges.json").read_text(encoding="utf-8"))
     for kind in ("railway", "motorway"):
         for line in data[kind]:
             x, y = to_px(np.array(line)[:, ::-1], g)  # OSM is (lon, lat)
@@ -113,7 +115,7 @@ def rasterise_bridges(g, osm):
     top_draw, deck_draw, id_draw = ImageDraw.Draw(top_img), ImageDraw.Draw(deck_img), ImageDraw.Draw(id_img)
     functions = [0]
     decks = []
-    for f in sorted((CACHE / "brid").glob("*.npz")):
+    for f in landmark_files("brid"):
         d = np.load(f)
         base_id = len(functions)
         functions += d["function"].tolist()
@@ -164,7 +166,7 @@ def main():
     t0 = time.time()
     g = grid_spec()
     res = ground_res()
-    ground = np.load(CACHE / "ground.npy")
+    ground = np.load(OUT / "ground.npy")
     btop, n_bldg = rasterise_buildings(g)
     inside = btop > -1e3
     dsm = np.where(inside, np.maximum(btop, ground), ground).astype(np.float32)
@@ -239,8 +241,8 @@ def main():
         classes[row:row + len(yy)] = c
     keep = (status > 0) & (classes != CLS_OUTSIDE)
     classes[keep] = status[keep]
-    np.save(CACHE / "classes.npy", classes)
-    np.save(CACHE / "deck.npy", deck)
+    np.save(OUT / "classes.npy", classes)
+    np.save(OUT / "deck.npy", deck)
 
     meta = {
         "landmark": LANDMARK,
@@ -251,9 +253,9 @@ def main():
         "refraction_k": REFRACTION_K,
         "buildings": n_bldg,
         "bridges": bstats,
-        "files": len(list((CACHE / "bldg").glob("*.npz"))),
+        "files": len(landmark_files("bldg")),
     }
-    (CACHE / "visibility_meta.json").write_text(json.dumps(meta, ensure_ascii=False, indent=1), encoding="utf-8")
+    (OUT / "visibility_meta.json").write_text(json.dumps(meta, ensure_ascii=False, indent=1), encoding="utf-8")
     vals, counts = np.unique(classes, return_counts=True)
     print(dict(zip(vals.tolist(), counts.tolist())))
     print(f"done {time.time() - t0:.0f}s")

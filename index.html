@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <title>スカイツリー × 月</title>
-  <meta name="description" content="PLATEAUの3D都市モデルで、月や太陽がスカイツリーの先端に重なって見える地上の場所と時刻を探すアプリ">
+  <title>ランドマーク × 月/太陽 撮影スポット案内</title>
+  <meta name="description" content="PLATEAUの3D都市モデルで、月や太陽がスカイツリーや東京タワーの先端に重なって見える地上の場所と時刻を探すアプリ">
   <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
   <link rel="stylesheet" href="style.css">
 </head>
@@ -13,13 +13,18 @@
 
   <aside id="panel">
     <header class="panel-head">
-      <button id="sheet-toggle" class="sheet-handle" aria-label="パネルを開閉"></button>
-      <h1>スカイツリー × <span id="title-body">月</span></h1>
-      <p class="lead">月や太陽がスカイツリーの先端に重なって見える、地上の場所と時刻を探します。</p>
+      <button id="sheet-toggle" class="sheet-handle" aria-label="メニューを開閉" aria-expanded="true"><span></span></button>
+      <p class="app-name">ランドマーク × 月/太陽 撮影スポット案内</p>
+      <h1><span id="title-lm"></span> × <span id="title-body">月</span><span class="sheet-state" aria-hidden="true"></span></h1>
+      <p class="lead">月や太陽が<span class="lm-short"></span>の先端に重なって見える、地上の場所と時刻を探します。</p>
     </header>
 
     <div class="panel-body">
       <section class="controls">
+        <div class="segmented" role="radiogroup" aria-label="ランドマーク">
+          <button data-landmark="skytree" role="radio">スカイツリー</button>
+          <button data-landmark="tokyotower" role="radio">東京タワー</button>
+        </div>
         <div class="segmented" role="radiogroup" aria-label="天体">
           <button data-body="Moon" class="active" role="radio" aria-checked="true">月</button>
           <button data-body="Sun" role="radio" aria-checked="false">太陽</button>
@@ -62,7 +67,7 @@
       </section>
 
       <section class="legend">
-        <h2>スカイツリーの見え方</h2>
+        <h2><span class="lm-short"></span>の見え方</h2>
         <label class="toggle"><input type="checkbox" id="heat-toggle" checked> 地図に表示</label>
         <label class="toggle"><input type="checkbox" id="bldg-toggle"> 建物を立体表示</label>
         <div class="legend-bar" id="legend-bar"></div>
@@ -88,7 +93,7 @@
     <div id="viewer-sky"></div>
     <div id="viewer-body"></div>
     <div id="viewer-canvas"></div>
-    <div id="viewer-label">スカイツリー</div>
+    <div id="viewer-label"></div>
     <header class="viewer-bar">
       <div>
         <strong id="viewer-title"></strong>
@@ -100,7 +105,7 @@
     <footer class="viewer-controls">
       <label>時刻 <input type="range" id="viewer-time-slider" min="-60" max="60" step="1" value="0"></label>
       <label>焦点距離 <input type="range" id="viewer-focal" min="24" max="800" step="1" value="200"> <span id="viewer-focal-value"></span></label>
-      <button id="viewer-face" class="btn">スカイツリーを向く</button>
+      <button id="viewer-face" class="btn"></button>
       <p class="muted small">ドラッグで見回し、矢印キーで移動。目の高さ1.6m、35mm判の横位置で表示しています。</p>
     </footer>
   </div>

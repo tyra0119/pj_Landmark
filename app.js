@@ -24,8 +24,9 @@ const WARDS = {
 };
 const BODY_LABEL = { Moon: '月', Sun: '太陽' };
 
-const state = { body: 'Moon', mode: 'center', date: null, meta: null, run: 0, pointRun: 0 };
-let map, LM, zTop, obsLM, palette, deckKeys;
+const LANDMARK_IDS = ['skytree', 'tokyotower'];
+const state = { landmark: 'skytree', body: 'Moon', mode: 'center', date: null, meta: null, run: 0, pointRun: 0 };
+let map, LM, zTop, obsLM, palette, deckKeys, landmarkPin;
 let timeMarkers = [];
 let pointMarker = null;
 let spotPopup = null;   // only one spot popup at a time
@@ -48,9 +49,41 @@ function metersPerDeg(lat) {
   return [111132.954 - 559.822 * Math.cos(2 * p) + 1.175 * Math.cos(4 * p),
     111412.84 * Math.cos(p) - 93.5 * Math.cos(3 * p)];
 }
-function offset(lat, lon, bearing, d) {
-  const [mLat, mLon] = metersPerDeg(lat);
-  return [lat + d * Math.cos(bearing * D2R) / mLat, lon + d * Math.sin(bearing * D2R) / mLon];
+// Local tangent plane at the midpoint plus the meridian convergence: good to a
+// few metres even 100 km out, where "north" turns by about half a degree.
+function destination(lat, lon, bearing, d) {
+  let la = lat, lo = lon, conv = 0;
+  for (let i = 0; i < 3; i++) {
+    const mid = (lat + la) / 2;
+    const [mLat, mLon] = metersPerDeg(mid);
+    const b = (bearing + conv / 2) * D2R;
+    la = lat + d * Math.cos(b) / mLat;
+    lo = lon + d * Math.sin(b) / mLon;
+    conv = (lo - lon) * Math.sin(mid * D2R);
+  }
+  return [la, lo];
+}
+// azimuth at point 1 of the direction to point 2
+function azimuthTo(lat1, lon1, lat2, lon2) {
+  const bm = distBearing(lat1, lon1, lat2, lon2)[1];
+  return (bm - (lon2 - lon1) * Math.sin((lat1 + lat2) / 2 * D2R) / 2 + 360) % 360;
+}
+// where to stand d metres from the landmark so that it lies at azimuth az; the
+// returned bearing (from the landmark) is shared by nearby points on that line
+function placeObserver(az, d) {
+  let b = (az + 180) % 360, p;
+  for (let i = 0; i < 3; i++) {
+    p = destination(LM.lat, LM.lon, b, d);
+    b += ((az - azimuthTo(p[0], p[1], LM.lat, LM.lon) + 540) % 360) - 180;
+  }
+  return [p[0], p[1], b];
+}
+// distances from the landmark where observers can be, and the area they cover
+const distRange = () => state.meta.d_range ?? [MIN_DIST, state.meta.radius_m];
+const areaLabel = () => state.meta.area_label ?? `半径${state.meta.radius_m / 1000}km以内`;
+function inArea(lat, lon) {
+  const circles = state.meta.area ?? [{ lat: LM.lat, lon: LM.lon, r: state.meta.radius_m }];
+  return circles.some((c) => distBearing(lat, lon, c.lat, c.lon)[0] <= c.r);
 }
 function distBearing(lat1, lon1, lat2, lon2) {
   const [mLat, mLon] = metersPerDeg((lat1 + lat2) / 2);
@@ -126,7 +159,7 @@ async function classAt(lat, lon) {
     lat, lon, state.meta.data_zoom);
   if (!p) return OUTSIDE;
   // classes that are never drawn are told apart by their alpha value
-  if (p[3] === 0) return distBearing(lat, lon, LM.lat, LM.lon)[0] > state.meta.radius_m ? OUTSIDE : BUILDING;
+  if (p[3] === 0) return inArea(lat, lon) ? BUILDING : OUTSIDE;
   if (p[3] === 1) return WATER;
   if (p[3] === 2) return VIADUCT;
   if (p[3] < 255) return 0;  // "tip hidden" is the only visible translucent class
@@ -184,18 +217,24 @@ async function placeName(lat, lon) {
 // ---------- alignment path for one day ----------
 async function computeDay(ymd, body, mode, run) {
   const start = jstMidnight(ymd).getTime();
-  const altMax = elevAngle(zTop, LM.base, MIN_DIST);
-  const altMin = elevAngle(zTop, LM.base, state.meta.radius_m);
+  const [dMin, dMax] = distRange();
+  const altMax = elevAngle(zTop, LM.base, dMin);
+  const altMin = elevAngle(zTop, LM.base, dMax);
 
   // 1) where the observer would stand, assuming ground at the landmark's base
   const cands = [];
   for (let k = 0, t = start; t < start + 86400e3; k++, t += STEP_SEC * 1000) {
-    const h = bodyHor(body, new Date(t));
-    const target = mode === 'perch' ? h.alt - h.sd : h.alt;
+    const date = new Date(t);
+    let h = bodyHor(body, date);
+    let target = mode === 'perch' ? h.alt - h.sd : h.alt;
     if (target < altMin - 0.2 || target > altMax) continue;
-    const bearing = (h.az + 180) % 360;
-    const [lat, lon] = offset(LM.lat, LM.lon, bearing, solveDistance(target, LM.base));
-    cands.push({ k, t, h, target, bearing, lat, lon });
+    let pos = placeObserver(h.az, solveDistance(target, LM.base));
+    // the sky's azimuth and altitude are those seen where the observer stands
+    h = bodyHor(body, date, new Astronomy.Observer(pos[0], pos[1], 0));
+    target = mode === 'perch' ? h.alt - h.sd : h.alt;
+    if (target < altMin - 0.2 || target > altMax) continue;
+    pos = placeObserver(h.az, solveDistance(target, LM.base));
+    cands.push({ k, t, h, target, bearing: pos[2], lat: pos[0], lon: pos[1] });
   }
 
   // 2) correct for the local ground height (tiles fetched in parallel)
@@ -206,8 +245,8 @@ async function computeDay(ymd, body, mode, run) {
   cands.forEach((c, i) => {
     const zO = ground[i] + state.meta.eye_height;
     const d = solveDistance(c.target, zO);
-    if (d > state.meta.radius_m || d < MIN_DIST) { prevK = -2; return; }
-    const [lat, lon] = offset(LM.lat, LM.lon, c.bearing, d);
+    if (d > dMax || d < dMin) { prevK = -2; return; }
+    const [lat, lon] = destination(LM.lat, LM.lon, c.bearing, d);
     // a new pass after a gap, or when the body crosses the meridian (south)
     if (c.k !== prevK + 1 || (cur && (cur.points.at(-1).az < 180) !== (c.h.az < 180))) { cur = { points: [] }; passes.push(cur); }
     prevK = c.k;
@@ -229,7 +268,7 @@ async function computeDay(ymd, body, mode, run) {
   const relocate = (s, g) => {
     s.zO = g + state.meta.eye_height;
     s.d = solveDistance(s.target, s.zO);
-    [s.lat, s.lon] = offset(LM.lat, LM.lon, s.bearing, s.d);
+    [s.lat, s.lon] = destination(LM.lat, LM.lon, s.bearing, s.d);
   };
   for (let round = 0; round < 2; round++) {
     const g = await Promise.all(samples.map((s) => groundAt(s.lat, s.lon)));
@@ -242,7 +281,7 @@ async function computeDay(ymd, body, mode, run) {
     const stable = Math.abs(check[i] + state.meta.eye_height - s.zO) < 1;
     // on a bridge deck the ground-level answer does not apply (you would be under the deck)
     s.cls = !stable ? UNSTABLE : deckHeight(s.lat, s.lon) !== null ? UNSTABLE
-      : s.d > state.meta.radius_m || s.d < MIN_DIST ? OUTSIDE : classes[i];
+      : s.d > dMax || s.d < dMin ? OUTSIDE : classes[i];
   });
 
   // 4) on a bridge the eye is higher, so the tip looks lower and the alignment happens
@@ -273,7 +312,7 @@ const DECK_SEARCH_M = 450;   // decks are at most ~30 m above ground
 // quick test: does the ray segment touch any tile that has a walkable deck?
 function rayHasDeck(bearing, d0, d1) {
   for (let d = d0; d <= d1 + 100; d += 100) {
-    const [lat, lon] = offset(LM.lat, LM.lon, bearing, Math.min(d, d1));
+    const [lat, lon] = destination(LM.lat, LM.lon, bearing, Math.min(d, d1));
     const [x, y] = worldPx(lat, lon, state.meta.data_zoom);
     if (deckKeys.has(`${Math.floor(x / 256)}/${Math.floor(y / 256)}`)) return true;
   }
@@ -288,11 +327,11 @@ function findDeckRoots(points) {
     for (let t = p.t; t < q.t; t += DECK_STEP_SEC * 1000) {
       const s = lerpPoint(p, q, (t - p.t) / (q.t - p.t));
       const tan = Math.tan(s.target * D2R);
-      const dEnd = Math.max(s.d - DECK_SEARCH_M, MIN_DIST);
+      const dEnd = Math.max(s.d - DECK_SEARCH_M, distRange()[0]);
       if (!rayHasDeck(s.bearing, dEnd, s.d)) continue;
       let prev = null;
       for (let d = s.d; d > dEnd; d -= 1.5) {
-        const [lat, lon] = offset(LM.lat, LM.lon, s.bearing, d);
+        const [lat, lon] = destination(LM.lat, LM.lon, s.bearing, d);
         const h = deckHeight(lat, lon);
         if (h === null) { prev = null; continue; }
         const f = h + eye - (zTop - drop(d) - d * tan);   // > 0: eye above the line to the tip
@@ -388,7 +427,7 @@ function renderSpots(passes) {
   const whole = all.filter((s) => s.best >= WHOLE).length;
   document.getElementById('whole-count').textContent = `（${whole}か所）`;
   document.getElementById('summary').textContent = passes.length === 0
-    ? `この日は、半径${state.meta.radius_m / 1000}km以内で${label}がスカイツリーの先端に重なる時間がありません。`
+    ? `この日は、${areaLabel()}で${label}が${LM.short}の${LM.tip ?? '先端'}に重なる時間がありません。`
     : all.length === 0
       ? `${label}は重なりますが、建物に遮られて地上から見える場所が見つかりませんでした。`
       : `${all.length}か所。線の明るい部分に立つと、その時刻に${label}が先端に重なります。` +
@@ -449,7 +488,7 @@ function spotPopupHTML(spot) {
   const extra = state.body === 'Moon' ? `<dt>月</dt><dd>${moonPhaseText(date)}</dd><dt>空</dt><dd>${skyLabel(date).text}</dd>` : '';
   return `<strong>${fmtTime.format(spot.from)}〜${fmtTime.format(spot.to)}</strong>
     <dl class="kv" style="margin-top:6px">
-      <dt>距離</dt><dd>${(s.d / 1000).toFixed(2)}km（スカイツリーは${compass((s.az + 360) % 360)}）</dd>
+      <dt>距離</dt><dd>${(s.d / 1000).toFixed(2)}km（${LM.short}は${compass((s.az + 360) % 360)}）</dd>
       <dt>${label}の高さ</dt><dd>${s.alt.toFixed(1)}°</dd>
       ${extra}
       <dt>見え方</dt><dd>${visibleText(spot.best)}</dd>
@@ -481,7 +520,7 @@ function focusSpot(spot, li) {
       title: `${fmtTime.format(s.t).slice(0, 5)} の眺め`,
     });
   });
-  if (window.matchMedia('(max-width: 720px)').matches) document.getElementById('panel').classList.add('collapsed');
+  if (window.matchMedia('(max-width: 720px)').matches) window.closeSheet();
 }
 
 async function refresh() {
@@ -507,13 +546,14 @@ async function inspectPoint(lat, lon) {
   pointMarker = new maplibregl.Marker({ color: '#38bdf8' }).setLngLat([lon, lat]).addTo(map);
   map.getSource('sight').setData({ type: 'Feature', geometry: { type: 'LineString', coordinates: [[lon, lat], [LM.lon, LM.lat]] } });
 
-  const [d, bearing] = distBearing(lat, lon, LM.lat, LM.lon);
+  const d = distBearing(lat, lon, LM.lat, LM.lon)[0];
+  const bearing = azimuthTo(lat, lon, LM.lat, LM.lon);
   const cls = await classAt(lat, lon);
   const zO = await elevationAt(lat, lon) + state.meta.eye_height;
   const tipAlt = elevAngle(zTop, zO, d);
   const place = await placeName(lat, lon);
   let status;
-  if (cls === OUTSIDE) status = `<span class="badge ng">対象範囲外</span> 半径${state.meta.radius_m / 1000}km以内で選んでください`;
+  if (cls === OUTSIDE) status = `<span class="badge ng">対象範囲外</span> ${areaLabel()}で選んでください`;
   else if (cls === BUILDING) status = '<span class="badge ng">建物の中</span> 道路や広場を選んでください';
   else if (cls === WATER) status = '<span class="badge ng">水の上</span> 岸や橋の上を選んでください';
   else if (cls === VIADUCT) status = '<span class="badge ng">高架</span> 高速道路・鉄道の高架とその下は対象外です';
@@ -522,7 +562,7 @@ async function inspectPoint(lat, lon) {
   const head = `<p style="margin:0 0 6px">${place || ''}</p><p style="margin:0 0 8px">${status}</p>
     <dl class="kv"><dt>距離</dt><dd>${(d / 1000).toFixed(2)}km・${compass(bearing)}</dd><dt>先端の高さ</dt><dd>${tipAlt.toFixed(2)}°</dd></dl>`;
   info.innerHTML = head + '<p class="muted small">1年分の重なりを計算中…</p>';
-  if (cls < 0 || d < MIN_DIST) {
+  if (cls < 0 || d < distRange()[0]) {
     info.innerHTML = head;
     if (cls >= 0) addViewButton(info, lat, lon, zO, d);
     return;
@@ -596,9 +636,9 @@ async function loadRecommendations() {
   state.recs = recs;
   recs.forEach((r, i) => {
     const li = document.createElement('li');
-    const bearing = distBearing(r.lat, r.lon, LM.lat, LM.lon)[1];
+    const bearing = azimuthTo(r.lat, r.lon, LM.lat, LM.lon);
     li.innerHTML = `<span class="rank">${i + 1}</span><span class="spot-place">…</span>
-      <div class="spot-meta">${(r.d / 1000).toFixed(1)}km・${state.meta.landmark.name}は${compass(bearing)}・開けた広さ 約${r.area.toLocaleString()}m²</div>`;
+      <div class="spot-meta">${(r.d / 1000).toFixed(1)}km・${LM.short}は${compass(bearing)}・開けた広さ 約${r.area.toLocaleString()}m²<br>${visibleText(r.cls ?? WHOLE)}</div>`;
     li.addEventListener('click', () => selectRecommendation(i));
     list.append(li);
     r.li = li;
@@ -616,6 +656,15 @@ function selectRecommendation(i) {
 
 // ---------- UI ----------
 function setupControls() {
+  document.querySelectorAll('[data-landmark]').forEach((b) => b.addEventListener('click', async () => {
+    if (b.dataset.landmark === state.landmark) return;
+    state.landmark = b.dataset.landmark;
+    await loadLandmark(state.landmark);
+    syncControls();
+    map.flyTo({ center: [LM.lon, LM.lat], zoom: 12.6, pitch: map.getPitch() });
+    loadRecommendations();
+    refresh();
+  }));
   document.querySelectorAll('[data-body]').forEach((b) => b.addEventListener('click', () => {
     state.body = b.dataset.body;
     syncControls();
@@ -646,7 +695,18 @@ function setupControls() {
     map.setLayoutProperty('bldg3d', 'visibility', e.target.checked ? 'visible' : 'none');
     map.easeTo({ pitch: e.target.checked ? 60 : 0, zoom: e.target.checked ? Math.max(map.getZoom(), 15) : map.getZoom() });
   });
-  document.getElementById('sheet-toggle').addEventListener('click', () => document.getElementById('panel').classList.toggle('collapsed'));
+  // phones: the panel is a bottom sheet; tap the handle or the heading to open/close it
+  const panel = document.getElementById('panel');
+  const toggleSheet = (open = panel.classList.contains('collapsed')) => {
+    panel.classList.toggle('collapsed', !open);
+    document.getElementById('sheet-toggle').setAttribute('aria-expanded', open);
+  };
+  document.querySelector('.panel-head').addEventListener('click', (e) => {
+    if (!window.matchMedia('(max-width: 720px)').matches) return;
+    if (e.target.closest('a, input') ) return;
+    toggleSheet();
+  });
+  window.closeSheet = () => toggleSheet(false);
   document.getElementById('locate').addEventListener('click', () => {
     navigator.geolocation?.getCurrentPosition(
       (pos) => {
@@ -674,7 +734,6 @@ function setupControls() {
     t = new Date(fm.date.getTime() + 86400e3);
   }
 
-  document.getElementById('legend-bar').innerHTML = state.meta.palette.map((c, i) => `<span style="background:${c};opacity:${i ? 1 : 0.35}"></span>`).join('');
 }
 
 function syncControls() {
@@ -695,17 +754,69 @@ function syncControls() {
     : `${label}の真ん中に先端が来る位置。先端が${label}に刺さって見えます。`;
   document.querySelectorAll('.mode-help svg').forEach((svg, i) => svg.classList.toggle('on', (i === 1) === (state.mode === 'perch')));
   document.getElementById('title-body').textContent = BODY_LABEL[state.body];
-  document.title = `スカイツリー × ${BODY_LABEL[state.body]}`;
+  document.title = `${LM.short} × ${BODY_LABEL[state.body]}｜ランドマーク × 月/太陽 撮影スポット案内`;
+  document.querySelectorAll('[data-landmark]').forEach((b) => {
+    b.classList.toggle('active', b.dataset.landmark === state.landmark);
+    b.setAttribute('aria-checked', b.dataset.landmark === state.landmark);
+  });
+  document.getElementById('title-lm').textContent = LM.short;
+  document.querySelectorAll('.lm-short').forEach((e) => { e.textContent = LM.short; });
 }
 
 function readHash() {
   const p = new URLSearchParams(location.hash.slice(1));
+  if (LANDMARK_IDS.includes(p.get('lm'))) state.landmark = p.get('lm');
   if (p.get('body') in BODY_LABEL) state.body = p.get('body');
   if (['center', 'perch'].includes(p.get('mode'))) state.mode = p.get('mode');
   if (/^\d{4}-\d{2}-\d{2}$/.test(p.get('date') || '')) state.date = p.get('date');
 }
 function writeHash() {
-  history.replaceState(null, '', `#date=${state.date}&body=${state.body}&mode=${state.mode}`);
+  history.replaceState(null, '', `#lm=${state.landmark}&date=${state.date}&body=${state.body}&mode=${state.mode}`);
+}
+
+function heatSource(m) {
+  return {
+    type: 'raster', tiles: [new URL('.', location.href).href + m.tiles], tileSize: 256,
+    minzoom: m.min_zoom, maxzoom: m.data_zoom, bounds: m.bounds,
+    attribution: '<a href="https://www.mlit.go.jp/plateau/" target="_blank">PLATEAU</a>',
+  };
+}
+function heatLayer(m) {
+  const visible = document.getElementById('heat-toggle').checked;
+  return {
+    id: 'heat', type: 'raster', source: 'heat', minzoom: m.min_zoom, layout: { visibility: visible ? 'visible' : 'none' },
+    paint: { 'raster-opacity': 0.7, 'raster-resampling': 'nearest' },
+  };
+}
+
+// switch every landmark-specific piece of state; the map, if already built, follows
+async function loadLandmark(id) {
+  const m = await (await fetch(`data/${id}.json`)).json();
+  state.meta = m;
+  LM = { ...m.landmark, base: m.base_z };
+  zTop = m.base_z + m.landmark.height;
+  deckKeys = new Set(m.deck_tile_keys || []);
+  deckData.clear();
+  decksLoaded = null;
+  window.viewerConfig = { id: m.landmark.id, viewTiles: m.view_tiles, landmark: LM };
+  const c = m.area_center ?? LM;   // first guess for the sky; refined at each observer
+  obsLM = new Astronomy.Observer(c.lat, c.lon, 0);
+  palette = new Map(m.palette.map((c, i) => [`${parseInt(c.slice(1, 3), 16)},${parseInt(c.slice(3, 5), 16)},${parseInt(c.slice(5, 7), 16)}`, i]));
+  document.getElementById('data-info').textContent = `PLATEAU建物 ${m.buildings.toLocaleString()}棟・${areaLabel()}・${m.generated}作成`;
+  document.getElementById('legend-bar').innerHTML = m.palette.map((c, i) => `<span style="background:${c};opacity:${i ? 1 : 0.35}"></span>`).join('');
+  if (map) {
+    map.removeLayer('heat');
+    map.removeSource('heat');
+    map.addSource('heat', heatSource(m));
+    map.addLayer(heatLayer(m), 'sight');
+    landmarkPin.setLngLat([LM.lon, LM.lat]);
+    landmarkPin.getElement().title = LM.name;
+    document.getElementById('point-section').hidden = true;
+    pointMarker?.remove();
+    spotPopup?.remove();
+    map.getSource('sight').setData({ type: 'FeatureCollection', features: [] });
+    state.point = null;
+  }
 }
 
 function setupMap() {
@@ -723,11 +834,7 @@ function setupMap() {
           type: 'raster', tiles: ['https://cyberjapandata.gsi.go.jp/xyz/pale/{z}/{x}/{y}.png'], tileSize: 256, maxzoom: 18,
           attribution: '<a href="https://maps.gsi.go.jp/development/ichiran.html" target="_blank">地理院タイル</a>',
         },
-        heat: {
-          type: 'raster', tiles: [new URL('.', location.href).href + m.tiles], tileSize: 256,
-          minzoom: m.min_zoom, maxzoom: m.data_zoom, bounds: m.bounds,
-          attribution: '<a href="https://www.mlit.go.jp/plateau/" target="_blank">PLATEAU</a>',
-        },
+        heat: heatSource(m),
         align: { type: 'geojson', data: { type: 'FeatureCollection', features: [] } },
         spots: { type: 'geojson', data: { type: 'FeatureCollection', features: [] } },
         sight: { type: 'geojson', data: { type: 'FeatureCollection', features: [] } },
@@ -740,7 +847,7 @@ function setupMap() {
       },
       layers: [
         { id: 'base', type: 'raster', source: 'gsi', paint: { 'raster-saturation': -0.5, 'raster-brightness-max': 0.8 } },
-        { id: 'heat', type: 'raster', source: 'heat', minzoom: m.min_zoom, paint: { 'raster-opacity': 0.7, 'raster-resampling': 'nearest' } },
+        heatLayer(m),
         { id: 'sight', type: 'line', source: 'sight', paint: { 'line-color': '#38bdf8', 'line-width': 1.5, 'line-dasharray': [2, 2] } },
         {
           id: 'align-other', type: 'line', source: 'align', filter: ['!=', ['get', 'vis'], 'visible'],
@@ -775,8 +882,7 @@ function setupMap() {
   map.addControl(new maplibregl.ScaleControl({ unit: 'metric' }), 'bottom-right');
   const pin = document.createElement('div');
   pin.className = 'landmark-pin';
-  pin.title = LM.name;
-  new maplibregl.Marker({ element: pin }).setLngLat([LM.lon, LM.lat]).addTo(map);
+  landmarkPin = new maplibregl.Marker({ element: pin }).setLngLat([LM.lon, LM.lat]).addTo(map);
 
   map.on('click', 'recs', (e) => selectRecommendation(e.features[0].properties.i));
   map.on('mouseenter', 'recs', () => { map.getCanvas().style.cursor = 'pointer'; });
@@ -795,19 +901,10 @@ function setupMap() {
 }
 
 async function main() {
-  state.meta = await (await fetch('data/skytree.json')).json();
-  const m = state.meta;
-  LM = { ...m.landmark, base: m.base_z };
-  zTop = m.base_z + m.landmark.height;
-  deckKeys = new Set(m.deck_tile_keys || []);
-  window.viewerConfig = { id: m.landmark.id, landmark: { ...m.landmark, base: m.base_z } };
-  obsLM = new Astronomy.Observer(LM.lat, LM.lon, 0);
-  palette = new Map(m.palette.map((c, i) => [`${parseInt(c.slice(1, 3), 16)},${parseInt(c.slice(3, 5), 16)},${parseInt(c.slice(5, 7), 16)}`, i]));
-  document.getElementById('data-info').textContent = `PLATEAU建物 ${m.buildings.toLocaleString()}棟・半径${m.radius_m / 1000}km・${m.generated}作成`;
-
   const fm = Astronomy.SearchMoonPhase(180, new Date(), 40);
   state.date = fmtYmd.format(fm ? fm.date : new Date());
   readHash();
+  await loadLandmark(state.landmark);
   setupControls();
   syncControls();
   await setupMap();
