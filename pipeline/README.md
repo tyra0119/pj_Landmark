@@ -16,6 +16,7 @@ python make_tiles.py        # XYZタイルとメタデータを書き出す
 python make_view_tiles.py   # 眺め（一人称視点）用の建物・橋面タイルを書き出す
 python make_recommend.py    # 全体が見えるおすすめ地点（広く開けた順）を書き出す
 python fetch_climate.py     # 過去10年の月・時刻ごとの晴れやすさ（Open-Meteo / ERA5）
+python make_transit.py      # 観測範囲の周辺の駅・始発終電（iss の ODPT データから）とシェアサイクルのポート
 ```
 
 中間データは `~/.cache/landmark`（環境変数 `LANDMARK_CACHE` で変更可）に置きます。CityGMLは1ファイルずつ取得→抽出→削除するので、ディスクに残るのは約400MBです。

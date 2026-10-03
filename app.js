@@ -595,11 +595,13 @@ async function renderSpots(passes) {
       const span = secs >= 1 ? `${secs}秒間` : '一瞬';
       li.innerHTML = `<span class="spot-time">${fmtTime.format(spot.from)}</span><span class="spot-place">…</span>${spot.onDeck ? '<span class="deck-badge">橋の上</span>' : ''}${spot.best >= WHOLE ? '<span class="deck-badge whole">全体が見える</span>' : ''}
         <div class="spot-meta">${(spot.mid.d / 1000).toFixed(2)}km・${compass((spot.mid.az + 360) % 360)}向き・幅${Math.max(2, Math.round(spot.length))}m・${span}<br>
-        ${visibleText(spot.best)}・目安${Math.round(det.focal)}mm${weather ? '<br>' + weatherText(weather, spot.from) : ''}</div>`;
+        ${visibleText(spot.best)}・目安${Math.round(det.focal)}mm${weather ? '<br>' + weatherText(weather, spot.from) : ''}
+        <br><span class="spot-access"></span></div>`;
       li.addEventListener('click', () => focusSpot(spot, li));
       ol.append(li);
       spot.li = li;
       placeName(spot.mid.lat, spot.mid.lon).then((n) => { li.querySelector('.spot-place').textContent = n || ''; });
+      accessLine(spot.mid.lat, spot.mid.lon, spot.from).then((h) => { li.querySelector('.spot-access').innerHTML = h; });
     }
 
     // time labels every 5 minutes along the path, skipped where they would crowd
@@ -681,8 +683,60 @@ function spotPopupHTML(spot) {
       <dt>${LM.far ? '山' : '塔'}の見かけ</dt><dd>${det.tower.toFixed(1)}°（${label}の${(det.tower / (2 * s.sd)).toFixed(0)}倍）</dd>
       <dt>焦点距離</dt><dd>約${Math.round(det.focal)}mm で${LM.far ? '山' : '塔'}が縦位置に収まる（35mm判）</dd>
     </dl>
+    <div data-access></div>
     <button class="popup-btn" data-view>この場所からの眺めを見る</button>
     ${directionsLink(s.lat, s.lon, `${fmtTime.format(spot.from).slice(0, 5)}までに到着`)}`;
+}
+
+// ---------- getting there by public transport ----------
+const VERDICT = {
+  ok: ['ok', '電車で行けます'],
+  'before-first': ['warn', '始発前です'],
+  'after-last': ['warn', '帰りの終電後です'],
+};
+// one-line summary for list items: nearest station, walk, and whether trains run then
+async function accessLine(lat, lon, t) {
+  const [st] = await Transit.nearestStations(lat, lon, 2000, 1);
+  if (!st) return '<span class="acc warn">2km以内に駅がありません</span>';
+  const v = Transit.trainVerdict(st, t);
+  const [cls, text] = VERDICT[v?.verdict] ?? ['', ''];
+  return `${st.name}駅 徒歩${st.walk}分${v ? `<span class="acc ${cls}">${text.replace('です', '')}</span>` : ''}`;
+}
+async function accessHTML(lat, lon, t) {
+  const [stations, ports] = await Promise.all([Transit.nearestStations(lat, lon, 2000, 2), Transit.portsNear(lat, lon, 500, 2)]);
+  const isToday = fmtYmd.format(new Date(t)) === fmtYmd.format(new Date());
+  let html = '<div class="access"><div class="access-title">公共交通で行く</div>';
+  if (!stations.length) html += '<p class="small muted">2km以内に駅のデータがありません（公共交通オープンデータの範囲外）。</p>';
+  for (const [i, st] of stations.entries()) {
+    const v = Transit.trainVerdict(st, t);
+    const lines = st.lines.map((l) => `<span class="line-chip" style="--c:${l.color || '#94a3b8'}">${l.name}</span>`).join('');
+    html += `<div class="station"><strong>${st.name}駅</strong> 徒歩${st.walk}分<div class="lines">${lines}</div>`;
+    if (v) {
+      const [cls, text] = VERDICT[v.verdict];
+      html += `<div class="verdict ${cls}">${text}<span class="muted">（${v.type}ダイヤ 始発${v.first}・終電${v.last}）</span></div>`;
+    }
+    if (i === 0 && isToday) {
+      const status = await Transit.lineStatus(st);
+      if (status?.length) {
+        const bad = status.filter((s) => s.delayed);
+        html += bad.length
+          ? `<div class="verdict warn">運行情報：${bad.map((s) => s.name).join('・')}に遅れなど</div>`
+          : '<div class="verdict ok">運行情報：いまは平常どおり</div>';
+      }
+    }
+    html += '</div>';
+  }
+  if (ports.length) {
+    const night = stations.some((st) => Transit.trainVerdict(st, t)?.verdict !== 'ok');
+    html += `<div class="bikes"><div class="access-sub">シェアサイクル${night ? '（電車がない時間の足に）' : ''}</div>` +
+      ports.map((p) => `<div>${p.n ?? 'ポート'}（${p.d}m）${p.status ? `<span class="muted">いま貸出 ${p.status.bikes ?? '?'}台・返却 ${p.status.docks ?? '?'}台</span>` : ''}</div>`).join('') + '</div>';
+  }
+  return html + '</div>';
+}
+async function fillAccess(el, lat, lon, t) {
+  if (!el) return;
+  el.innerHTML = '<p class="small muted">交通を調べています…</p>';
+  el.innerHTML = await accessHTML(lat, lon, t);
 }
 
 // Google Maps opens with the current location as the start (app on phones, web elsewhere)
@@ -705,6 +759,7 @@ async function focusSpot(spot, li) {
   spotPopup?.remove();
   spot.weather = weatherText(await weatherFor(state.date), spot.from);
   const popup = spotPopup = new maplibregl.Popup({ maxWidth: '320px' }).setLngLat([spot.mid.lon, spot.mid.lat]).setHTML(spotPopupHTML(spot)).addTo(map);
+  fillAccess(popup.getElement().querySelector('[data-access]'), spot.mid.lat, spot.mid.lon, spot.from);
   popup.getElement().querySelector('[data-view]').addEventListener('click', () => {
     const s = spot.mid;
     openViewer({
@@ -796,6 +851,7 @@ async function inspectPoint(lat, lon) {
     popup.setHTML(html);
     const el = popup.getElement();
     el.querySelector('[data-view]')?.addEventListener('click', () => openPointView(lat, lon, view.zO, view.d, view.time));
+    fillAccess(el.querySelector('[data-access]'), lat, lon, view.time ?? Date.now());
     el.querySelector('[data-detail]')?.addEventListener('click', () => {
       document.getElementById('panel').classList.remove('collapsed');
       document.getElementById('point-section').scrollIntoView({ block: 'start', behavior: 'smooth' });
@@ -876,7 +932,7 @@ async function inspectPoint(lat, lon) {
 }
 
 function popupButtons(lat, lon, time, more = false) {
-  return `<button class="popup-btn" data-view>${time ? '重なる時刻の眺めを見る' : '今の眺めを見る'}</button>
+  return `<div data-access></div><button class="popup-btn" data-view>${time ? '重なる時刻の眺めを見る' : '今の眺めを見る'}</button>
     ${directionsLink(lat, lon)}
     ${more ? '<button class="popup-btn" data-detail>すべての日時を見る</button>' : ''}`;
 }
@@ -891,6 +947,9 @@ function openPointView(lat, lon, zO, d, time) {
 }
 
 function addViewButton(info, lat, lon, zO, d, time) {
+  const acc = document.createElement('div');
+  info.append(acc);
+  fillAccess(acc, lat, lon, time ?? Date.now());
   info.insertAdjacentHTML('beforeend', directionsLink(lat, lon));
   const btn = document.createElement('button');
   btn.className = 'btn';
@@ -1261,7 +1320,7 @@ async function main() {
   readHash();
   const done = busy('データを読み込んでいます…');
   try {
-    await loadLandmark(state.landmark);
+    await Promise.all([loadLandmark(state.landmark), Transit.load()]);
     setupControls();
     syncControls();
     await setupMap();

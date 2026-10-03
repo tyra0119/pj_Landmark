@@ -6,8 +6,8 @@
   <title>ランドマーク × 月/太陽 撮影スポット案内</title>
   <meta name="description" content="PLATEAUの3D都市モデルで、月や太陽がスカイツリーや東京タワーの先端に重なって見える地上の場所と時刻を探すアプリ">
   <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
-  <meta name="app-version" content="20261003161735">
-  <link rel="stylesheet" href="style.css?v=20261003161735">
+  <meta name="app-version" content="20261003162851">
+  <link rel="stylesheet" href="style.css?v=20261003162851">
 </head>
 <body>
   <div id="map"></div>
@@ -148,6 +148,8 @@
             立体の建物（地図）：<a href="https://github.com/indigo-lab/plateau-tokyo23ku-building-mvt-2020" target="_blank" rel="noopener">indigo-lab PLATEAU MVT（2020年度）</a><br>
             眺めの描画：<a href="https://deck.gl/" target="_blank" rel="noopener">deck.gl</a><br>
             高架の位置：<a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">© OpenStreetMap contributors</a><br>
+            公共交通：<a href="https://www.odpt.org/" target="_blank" rel="noopener">公共交通オープンデータセンター</a>（路線・駅・時刻表・運行情報、CC BY 4.0 ほか各事業者のライセンス）。運行情報と台数は中継サーバー経由で取得<br>
+            シェアサイクル：ドコモ・バイクシェア、OpenStreet（ハローサイクリング）のGBFS<br>
             天気：<a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a>（予報は気象庁モデル、過去の晴れやすさはERA5）<br>
             天体計算：<a href="https://github.com/cosinekitty/astronomy" target="_blank" rel="noopener">Astronomy Engine</a></p>
           <p id="data-info" class="muted small"></p>
@@ -180,7 +182,8 @@
 
   <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/astronomy-engine@2.1.19/astronomy.browser.min.js"></script>
-  <script src="viewer.js?v=20261003161735"></script>
-  <script src="app.js?v=20261003161735"></script>
+  <script src="transit.js?v=20261003162851"></script>
+  <script src="viewer.js?v=20261003162851"></script>
+  <script src="app.js?v=20261003162851"></script>
 </body>
 </html>

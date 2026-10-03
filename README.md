@@ -19,6 +19,7 @@ Project PLATEAU の3D都市モデルを使い、ランドマーク（富士山�
 - 地図上で建物を立体表示
 - 全体が見えるおすすめ地点、観測場所への道案内（Google マップ）、地図の現在地表示
 - 天気：2週間以内は雲量予報、それより先は過去10年の晴れやすさ
+- 公共交通：最寄り駅と徒歩時間、その時刻に電車で行けるか（始発前・終電後）、当日の運行情報、近くのシェアサイクルと空き台数（公共交通オープンデータセンター）
 
 ## 構成
 
@@ -40,3 +41,4 @@ Project PLATEAU の3D都市モデルを使い、ランドマーク（富士山�
 - [Project PLATEAU](https://www.mlit.go.jp/plateau/)（国土交通省、CC BY 4.0）
 - [地理院タイル](https://maps.gsi.go.jp/development/ichiran.html)（標高・背景地図）
 - [OpenStreetMap](https://www.openstreetmap.org/copyright)（高速道路・鉄道の高架の位置、ODbL）
+- [公共交通オープンデータセンター](https://www.odpt.org/)（路線・駅・時刻表・運行情報、シェアサイクルGBFS）。運行情報と台数は中継サーバー（tyra.jp）経由で取得し、アクセストークンはブラウザに出さない
