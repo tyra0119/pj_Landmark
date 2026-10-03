@@ -10,6 +10,7 @@
 </head>
 <body>
   <div id="map"></div>
+  <div id="busy" class="busy" role="status" aria-live="polite" hidden><span class="spinner"></span><span id="busy-text">読み込んでいます…</span></div>
 
   <aside id="panel">
     <header class="panel-head">
@@ -64,7 +65,7 @@
 
         <section>
           <h2>この日、重なって見える場所（おすすめスポット）</h2>
-          <p id="summary" class="muted">計算中…</p>
+          <p id="summary" class="muted"></p>
           <div id="spot-cat" class="segmented cat" role="radiogroup" aria-label="見え方">
             <button data-cat="whole" role="radio"><span class="cat-dot whole"></span>全体が見える<b id="cat-whole-n"></b></button>
             <button data-cat="part" role="radio"><span class="cat-dot part"></span>一部が見える<b id="cat-part-n"></b></button>

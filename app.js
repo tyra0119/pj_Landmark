@@ -679,13 +679,38 @@ async function focusSpot(spot, li) {
   if (window.matchMedia('(max-width: 720px)').matches) window.closeSheet();
 }
 
+// "please wait" message on the map and in the list while something takes seconds
+let busyCount = 0;
+function busy(text) {
+  busyCount++;
+  document.getElementById('busy-text').textContent = text;
+  document.getElementById('busy').hidden = false;
+  let done = false;
+  return () => {
+    if (done) return;
+    done = true;
+    if (--busyCount <= 0) {
+      busyCount = 0;
+      document.getElementById('busy').hidden = true;
+    }
+  };
+}
+const waitHTML = (text) => `<span class="wait"><span class="spinner"></span>${text}</span>`;
+
 async function refresh() {
   const run = ++state.run;
   writeHash();
-  document.getElementById('summary').textContent = '計算中…';
-  document.getElementById('spots').innerHTML = '';
-  const passes = await computeDay(state.date, state.body, state.mode, run);
-  if (passes && run === state.run) renderSpots(passes);
+  const text = `${fmtDay.format(jstMidnight(state.date))}に${BODY_LABEL[state.body]}が${LM.short}の${tip()}に重なる場所を計算しています…`;
+  const done = busy(text);
+  try {
+    document.getElementById('summary').innerHTML = waitHTML(text);
+    document.getElementById('spots').innerHTML = '';
+    document.getElementById('spot-cat').hidden = true;
+    const passes = await computeDay(state.date, state.body, state.mode, run);
+    if (passes && run === state.run) await renderSpots(passes);
+  } finally {
+    done();
+  }
   if (state.point) inspectPoint(state.point.lat, state.point.lon);
 }
 
@@ -877,14 +902,23 @@ function showTab(name) {
 }
 
 async function switchLandmark(id) {
-  if (id === state.landmark) return;
-  state.landmark = id;
-  await loadLandmark(id);
-  syncControls();
-  const c = state.meta.area_center ?? LM;   // a far landmark: look at the area people stand in
-  map.flyTo({ center: [c.lon, c.lat], zoom: LM.far ? 11.5 : 12.6, pitch: map.getPitch() });
-  loadRecommendations();
-  refresh();
+  if (id === state.landmark || state.switching) return;
+  state.switching = true;
+  const done = busy(`${LANDMARK_PINS[id].short}のデータを読み込んでいます…`);
+  document.getElementById('panel').classList.add('loading');
+  try {
+    state.landmark = id;
+    await loadLandmark(id);
+    syncControls();
+    const c = state.meta.area_center ?? LM;   // a far landmark: look at the area people stand in
+    map.flyTo({ center: [c.lon, c.lat], zoom: LM.far ? 11.5 : 12.6, pitch: map.getPitch() });
+    loadRecommendations();
+    await refresh();
+  } finally {
+    done();
+    state.switching = false;
+    document.getElementById('panel').classList.remove('loading');
+  }
 }
 
 // ---------- UI ----------
@@ -1140,12 +1174,17 @@ async function main() {
   const fm = Astronomy.SearchMoonPhase(180, new Date(), 40);
   state.date = fmtYmd.format(fm ? fm.date : new Date());
   readHash();
-  await loadLandmark(state.landmark);
-  setupControls();
-  syncControls();
-  await setupMap();
-  loadRecommendations();
-  refresh();
+  const done = busy('データを読み込んでいます…');
+  try {
+    await loadLandmark(state.landmark);
+    setupControls();
+    syncControls();
+    await setupMap();
+    loadRecommendations();
+    await refresh();
+  } finally {
+    done();
+  }
 }
 
 main();
