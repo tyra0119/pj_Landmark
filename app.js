@@ -817,7 +817,7 @@ function showPort(i) {
   const back = mode === 'return';
   const count = p.status ? (back ? `いま返却できる空き ${p.status.docks ?? '?'}台分` : `いま借りられる ${p.status.bikes ?? '?'}台`) : '';
   const route = `https://www.google.com/maps/dir/?api=1&destination=${p.lat.toFixed(6)},${p.lon.toFixed(6)}&travelmode=bicycling`;
-  const pp = portPopup = new maplibregl.Popup({ maxWidth: '260px', offset: 18, closeOnClick: false })
+  const pp = portPopup = new maplibregl.Popup({ maxWidth: '260px', offset: 18, closeOnClick: false, focusAfterOpen: false })
     .setLngLat([p.lon, p.lat])
     .setHTML(`<div class="port-pop"><div class="port-head"><span class="bike-badge">${i + 1}</span><strong>${p.n ?? 'シェアサイクルのポート'}</strong></div>
       <div class="muted">${back ? '自転車をここに返して、' : 'ここで借りて帰れます。'}撮影地点は${compass(azimuthTo(p.lat, p.lon, lat, lon))}へ${p.d}m</div>
