@@ -493,7 +493,11 @@ async function renderSpots(passes) {
   const all = passes.flatMap((p) => p.spots);
   const label = BODY_LABEL[state.body];
   const whole = all.filter((s) => s.best >= WHOLE).length;
-  document.getElementById('whole-count').textContent = `（${whole}か所）`;
+  document.getElementById('cat-whole-n').textContent = whole;
+  document.getElementById('cat-part-n').textContent = all.length - whole;
+  // open the category that has something, whole-tower first
+  if (state.spotCat !== 'part' || all.length === whole) state.spotCat = whole ? 'whole' : 'part';
+  document.getElementById('spot-cat').hidden = all.length === 0;
   const summary = document.getElementById('summary');
   if (all.length === 0) {
     // nothing to show: say so plainly, why, and what to try next
@@ -531,8 +535,9 @@ async function renderSpots(passes) {
     const wx = weatherText(weather, mid);
     const group = document.createElement('li');
     group.className = 'pass';
-    group.innerHTML = `<div class="pass-head"><strong>${dir}</strong><span class="pass-count">${pass.spots.length ? `${pass.spots.length}か所` : '見える場所なし'}</span>
+    group.innerHTML = `<div class="pass-head"><strong>${dir}</strong><span class="pass-count"></span>
       <div class="pass-sub">${fmtHM.format(pass.points[0].t)}〜${fmtHM.format(pass.points.at(-1).t)}${sky ? '・' + sky : ''}${wx ? '・' + wx : ''}</div></div>`;
+    pass.countEl = group.querySelector('.pass-count');
     const ol = document.createElement('ol');
     ol.className = 'spots';
     group.append(ol);
@@ -540,17 +545,12 @@ async function renderSpots(passes) {
     pass.emptyNote.className = 'empty-note';
     group.append(pass.emptyNote);
     list.append(group);
-    const score = (s) => s.best * 1e6 + Math.min(s.length, 500) * 1e3 + (s.to - s.from) / 1000;
-    const ranked = [...pass.spots].sort((a, b) => score(b) - score(a));
-    pass.spots.forEach((s) => { s.top = ranked.indexOf(s) < TOP_SPOTS; s.pass = pass; });
+    pass.spots.forEach((s) => { s.pass = pass; });
     pass.expanded = false;
-    if (pass.spots.length > TOP_SPOTS) {
-      const more = document.createElement('button');
-      more.className = 'more-btn';
-      more.addEventListener('click', () => { pass.expanded = !pass.expanded; applySpotFilter(); });
-      group.append(more);
-      pass.moreBtn = more;
-    }
+    pass.moreBtn = document.createElement('button');
+    pass.moreBtn.className = 'more-btn';
+    pass.moreBtn.addEventListener('click', () => { pass.expanded = !pass.expanded; applySpotFilter(); });
+    group.append(pass.moreBtn);
 
     for (const spot of pass.spots) {
       const li = document.createElement('li');
@@ -585,30 +585,46 @@ async function renderSpots(passes) {
   map.getSource('align').setData(pathGeoJSON([...passes, ...passes.map((p) => ({ samples: p.deckSamples }))]));
   map.getSource('spots').setData({
     type: 'FeatureCollection',
-    features: all.map((s, i) => ({ type: 'Feature', id: i, properties: { i }, geometry: { type: 'Point', coordinates: [s.mid.lon, s.mid.lat] } })),
+    features: all.map((s, i) => ({ type: 'Feature', id: i, properties: { i, whole: s.best >= WHOLE }, geometry: { type: 'Point', coordinates: [s.mid.lon, s.mid.lat] } })),
   });
   state.spots = all;
   state.passes = passes;
   applySpotFilter();
 }
 
-// which spots the list shows: the best few per time window, everything when
-// expanded, or only whole-tower spots when that filter is on
+// which spots the list shows: the chosen category ("whole tower" or "part of
+// it"), the best few per time window unless the window is expanded
 function applySpotFilter() {
+  const cat = state.spotCat;
+  const inCat = (s) => (cat === 'whole' ? s.best >= WHOLE : s.best < WHOLE);
+  document.querySelectorAll('[data-cat]').forEach((b) => {
+    b.classList.toggle('active', b.dataset.cat === cat);
+    b.setAttribute('aria-checked', b.dataset.cat === cat);
+  });
   for (const pass of state.passes || []) {
+    const mine = pass.spots.filter(inCat);
+    const score = (s) => Math.min(s.length, 500) * 1e3 + (s.to - s.from) / 1000 + s.best * 1e6;
+    const top = new Set([...mine].sort((a, b) => score(b) - score(a)).slice(0, TOP_SPOTS));
     for (const s of pass.spots) {
-      if (s.li) s.li.hidden = state.wholeOnly ? s.best < WHOLE : !(pass.expanded || s.top);
+      if (s.li) s.li.hidden = !inCat(s) || !(pass.expanded || top.has(s));
     }
+    pass.countEl.textContent = mine.length ? `${mine.length}か所` : '見える場所なし';
     // say why a time window shows nothing instead of leaving it blank
-    const shown = pass.spots.some((s) => s.li && !s.li.hidden);
-    pass.emptyNote.hidden = shown;
+    pass.emptyNote.hidden = mine.length > 0;
     pass.emptyNote.textContent = pass.spots.length === 0
       ? `この時間帯は、重なる位置がすべて${LM.far ? '建物や山' : '建物'}の陰・川の上・高架などで、見える場所がありません。`
-      : 'この時間帯に全体が見える場所はありません。「全体が見える場所だけ」を外すと表示されます。';
+      : cat === 'whole'
+        ? `この時間帯に全体が見える場所はありません。「一部が見える」に${pass.spots.length}か所あります。`
+        : `この時間帯の${pass.spots.length}か所は、すべて全体が見える場所です。`;
     if (pass.moreBtn) {
-      pass.moreBtn.hidden = state.wholeOnly;
-      pass.moreBtn.textContent = pass.expanded ? `上位${TOP_SPOTS}件だけ表示` : `ほか${pass.spots.length - TOP_SPOTS}件を表示`;
+      pass.moreBtn.hidden = mine.length <= TOP_SPOTS;
+      pass.moreBtn.textContent = pass.expanded ? `上位${TOP_SPOTS}件だけ表示` : `ほか${mine.length - TOP_SPOTS}件を表示`;
     }
+  }
+  // the map keeps both kinds, the other one faded
+  if (map?.getLayer('spots')) {
+    map.setPaintProperty('spots', 'circle-opacity', ['case', ['==', ['get', 'whole'], cat === 'whole'], 1, 0.3]);
+    map.setPaintProperty('spots', 'circle-stroke-opacity', ['case', ['==', ['get', 'whole'], cat === 'whole'], 1, 0.3]);
   }
 }
 
@@ -643,7 +659,12 @@ async function focusSpot(spot, li) {
   document.querySelectorAll('.spots li.active').forEach((e) => e.classList.remove('active'));
   li?.classList.add('active');
   map.flyTo({ center: [spot.mid.lon, spot.mid.lat], zoom: Math.max(map.getZoom(), 17) });
-  if (spot.li?.hidden && spot.pass) { spot.pass.expanded = true; applySpotFilter(); }
+  if (spot.li?.hidden && spot.pass) {
+    // picked on the map: open its category and time window in the list
+    state.spotCat = spot.best >= WHOLE ? 'whole' : 'part';
+    spot.pass.expanded = true;
+    applySpotFilter();
+  }
   spotPopup?.remove();
   spot.weather = weatherText(await weatherFor(state.date), spot.from);
   const popup = spotPopup = new maplibregl.Popup({ maxWidth: '320px' }).setLngLat([spot.mid.lon, spot.mid.lat]).setHTML(spotPopupHTML(spot)).addTo(map);
@@ -886,10 +907,10 @@ function setupControls() {
     syncControls();
     refresh();
   });
-  document.getElementById('whole-only').addEventListener('change', (e) => {
-    state.wholeOnly = e.target.checked;
+  document.querySelectorAll('[data-cat]').forEach((b) => b.addEventListener('click', () => {
+    state.spotCat = b.dataset.cat;
     applySpotFilter();
-  });
+  }));
   document.getElementById('rec-toggle').addEventListener('change', (e) => {
     recMarkers.forEach((m) => { m.getElement().hidden = !e.target.checked; });
   });
@@ -908,7 +929,7 @@ function setupControls() {
   };
   document.querySelector('.panel-head').addEventListener('click', (e) => {
     if (!window.matchMedia('(max-width: 720px)').matches) return;
-    if (e.target.closest('a, input') ) return;
+    if (e.target.closest('a, input, button') && !e.target.closest('#sheet-toggle')) return;
     toggleSheet();
   });
   window.closeSheet = () => toggleSheet(false);
@@ -1055,7 +1076,7 @@ function setupMap() {
         },
       },
       layers: [
-        { id: 'base', type: 'raster', source: 'gsi', paint: { 'raster-saturation': -0.5, 'raster-brightness-max': 0.8 } },
+        { id: 'base', type: 'raster', source: 'gsi', paint: { 'raster-saturation': -0.3 } },
         heatLayer(m),
         { id: 'sight', type: 'line', source: 'sight', paint: { 'line-color': '#38bdf8', 'line-width': 1.5, 'line-dasharray': [2, 2] } },
         {
@@ -1063,7 +1084,7 @@ function setupMap() {
           paint: { 'line-color': '#334155', 'line-width': 2, 'line-dasharray': [1.5, 1.5] },
         },
         { id: 'align-casing', type: 'line', source: 'align', filter: ['==', ['get', 'vis'], 'visible'], layout: { 'line-cap': 'round' }, paint: { 'line-color': '#0f172a', 'line-width': 9 } },
-        { id: 'align-visible', type: 'line', source: 'align', filter: ['==', ['get', 'vis'], 'visible'], layout: { 'line-cap': 'round' }, paint: { 'line-color': '#7dd3fc', 'line-width': 5 } },
+        { id: 'align-visible', type: 'line', source: 'align', filter: ['==', ['get', 'vis'], 'visible'], layout: { 'line-cap': 'round' }, paint: { 'line-color': '#0ea5e9', 'line-width': 5 } },
         {
           id: 'bldg3d', type: 'fill-extrusion', source: 'bldg', 'source-layer': 'bldg', minzoom: 14, layout: { visibility: 'none' },
           paint: {
@@ -1073,7 +1094,10 @@ function setupMap() {
         },
         {
           id: 'spots', type: 'circle', source: 'spots',
-          paint: { 'circle-radius': ['interpolate', ['linear'], ['zoom'], 12, 4, 17, 9], 'circle-color': '#fde68a', 'circle-stroke-color': '#0f172a', 'circle-stroke-width': 2 },
+          paint: {
+            'circle-radius': ['interpolate', ['linear'], ['zoom'], 12, ['case', ['get', 'whole'], 5, 3], 17, ['case', ['get', 'whole'], 11, 7]],
+            'circle-color': ['case', ['get', 'whole'], '#facc15', '#ffffff'], 'circle-stroke-color': '#334155', 'circle-stroke-width': 2,
+          },
         },
       ],
     },

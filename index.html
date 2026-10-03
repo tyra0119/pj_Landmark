@@ -17,11 +17,22 @@
       <p class="app-name">ランドマーク × 月/太陽 撮影スポット案内</p>
       <h1><span id="title-lm"></span> × <span id="title-body">月</span><span class="sheet-state" aria-hidden="true"></span></h1>
       <p class="lead">月や太陽が<span class="lm-short"></span>の<span class="lm-tip">先端</span>に重なって見える、地上の場所と時刻を探します。</p>
+      <div class="head-controls">
+        <div class="segmented" role="radiogroup" aria-label="ランドマーク">
+          <button data-landmark="skytree" role="radio">スカイツリー</button>
+          <button data-landmark="tokyotower" role="radio">東京タワー</button>
+          <button data-landmark="fuji" role="radio">富士山</button>
+        </div>
+        <div class="segmented" role="radiogroup" aria-label="天体">
+          <button data-body="Moon" class="active" role="radio" aria-checked="true">月</button>
+          <button data-body="Sun" role="radio" aria-checked="false">太陽</button>
+        </div>
+      </div>
     </header>
 
     <nav class="tabs" role="tablist">
-      <button role="tab" data-tab="spots" class="active" aria-selected="true">撮影スポット</button>
-      <button role="tab" data-tab="recs" aria-selected="false">おすすめ地点</button>
+      <button role="tab" data-tab="spots" class="active" aria-selected="true">重なる場所</button>
+      <button role="tab" data-tab="recs" aria-selected="false">全体が見える場所</button>
       <button role="tab" data-tab="layers" aria-selected="false">表示設定</button>
     </nav>
 
@@ -33,15 +44,6 @@
 
       <div data-panel="spots">
         <section class="controls">
-          <div class="segmented" role="radiogroup" aria-label="ランドマーク">
-            <button data-landmark="skytree" role="radio">スカイツリー</button>
-            <button data-landmark="tokyotower" role="radio">東京タワー</button>
-            <button data-landmark="fuji" role="radio">富士山</button>
-          </div>
-          <div class="segmented" role="radiogroup" aria-label="天体">
-            <button data-body="Moon" class="active" role="radio" aria-checked="true">月</button>
-            <button data-body="Sun" role="radio" aria-checked="false">太陽</button>
-          </div>
 
           <label class="field">
             <span>日付</span>
@@ -61,18 +63,21 @@
         </section>
 
         <section>
-          <h2>重なって見える場所</h2>
+          <h2>この日、重なって見える場所（おすすめスポット）</h2>
           <p id="summary" class="muted">計算中…</p>
+          <div id="spot-cat" class="segmented cat" role="radiogroup" aria-label="見え方">
+            <button data-cat="whole" role="radio"><span class="cat-dot whole"></span>全体が見える<b id="cat-whole-n"></b></button>
+            <button data-cat="part" role="radio"><span class="cat-dot part"></span>一部が見える<b id="cat-part-n"></b></button>
+          </div>
           <p id="weather-note" class="muted small"></p>
-          <label class="toggle"><input type="checkbox" id="whole-only"> 全体が見える場所だけ<span id="whole-count" class="muted small"></span></label>
           <ol id="spots" class="spots"></ol>
         </section>
       </div>
 
       <div data-panel="recs" hidden>
         <section>
-          <h2><span class="lm-short"></span>の全体が見えるおすすめ地点</h2>
-          <p class="muted small">根元近くまで見える場所のうち、開けて広い順。番号は地図上の印と同じです。タップすると、その場所で重なる日時を1年分探します。</p>
+          <h2><span class="lm-short"></span>の全体が見える場所</h2>
+          <p class="muted small">月や太陽と重ならない日でも、根元近くまで見渡せる場所です。開けて広い順に並べ、地図の水色の番号と対応しています。タップすると、その場所で重なる日時を1年分探します。</p>
           <ol id="recs" class="spots recs"></ol>
         </section>
       </div>
@@ -83,7 +88,12 @@
           <label class="toggle"><input type="checkbox" id="heat-toggle" checked> <span class="lm-short"></span>の見え方（色分け）</label>
           <div class="legend-bar" id="legend-bar"></div>
           <div class="legend-labels"><span>見えない</span><span><span class="lm-tip">先端</span>だけ</span><span>ほぼ全体</span></div>
-          <label class="toggle"><input type="checkbox" id="rec-toggle" checked> おすすめ地点の番号</label>
+          <label class="toggle"><input type="checkbox" id="rec-toggle" checked> 全体が見える場所（水色の番号）</label>
+          <ul class="marker-legend">
+            <li><span class="cat-dot whole"></span>重なる場所・全体が見える</li>
+            <li><span class="cat-dot part"></span>重なる場所・一部が見える</li>
+            <li><span class="rec-marker sample">1</span>全体が見える場所（重ならない日も）</li>
+          </ul>
           <label class="toggle"><input type="checkbox" id="bldg-toggle"> 建物を立体表示（地図を傾けます）</label>
         </section>
         <section>
