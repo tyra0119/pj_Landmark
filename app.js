@@ -389,24 +389,34 @@ function rayHasDeck(bearing, d0, d1) {
 function findDeckRoots(points) {
   const out = [];
   const eye = state.meta.eye_height;
+  const dMin = distRange()[0];
+  const nearDeck = points.map((p) => rayHasDeck(p.bearing, Math.max(p.d - DECK_SEARCH_M, dMin), p.d));
   for (let i = 0; i + 1 < points.length; i++) {
+    // only the 15 s steps whose rays come near a walkable deck are searched second by second
+    if (!nearDeck[i] && !nearDeck[i + 1]) continue;
     const p = points[i], q = points[i + 1];
     for (let t = p.t; t < q.t; t += DECK_STEP_SEC * 1000) {
       const s = lerpPoint(p, q, (t - p.t) / (q.t - p.t));
       const tan = Math.tan(s.target * D2R);
-      const dEnd = Math.max(s.d - DECK_SEARCH_M, distRange()[0]);
-      if (!rayHasDeck(s.bearing, dEnd, s.d)) continue;
+      const dEnd = Math.max(s.d - DECK_SEARCH_M, dMin);
+      if (dEnd >= s.d) continue;
+      // the ray is straight over a few hundred metres: place its ends exactly, interpolate between
+      const a = destination(LM.lat, LM.lon, s.bearing, s.d);
+      const b = destination(LM.lat, LM.lon, s.bearing, dEnd);
+      const n = Math.ceil((s.d - dEnd) / 1.5);
       let prev = null;
-      for (let d = s.d; d > dEnd; d -= 1.5) {
-        const [lat, lon] = destination(LM.lat, LM.lon, s.bearing, d);
+      for (let k = 0; k <= n; k++) {
+        const f = k / n;
+        const lat = a[0] + (b[0] - a[0]) * f, lon = a[1] + (b[1] - a[1]) * f;
         const h = deckHeight(lat, lon);
         if (h === null) { prev = null; continue; }
-        const f = h + eye - (zTop - drop(d) - d * tan);   // > 0: eye above the line to the tip
-        if (prev !== null && Math.sign(f) !== Math.sign(prev)) {
+        const d = s.d - (s.d - dEnd) * f;
+        const gap = h + eye - (zTop - drop(d) - d * tan);   // > 0: eye above the line to the tip
+        if (prev !== null && Math.sign(gap) !== Math.sign(prev)) {
           out.push({ ...s, d, lat, lon, zO: h + eye, onDeck: true });
           break;
         }
-        prev = f;
+        prev = gap;
       }
     }
   }
@@ -697,9 +707,32 @@ function busy(text) {
 }
 const waitHTML = (text) => `<span class="wait"><span class="spinner"></span>${text}</span>`;
 
+// day results are kept, and the other overlay mode is computed in the background,
+// so switching "centre / perch" (or going back to a date) is instant
+const dayCache = new Map();
+const dayKey = (mode) => `${state.landmark}|${state.date}|${state.body}|${mode}`;
+function precomputeOtherMode() {
+  const mode = state.mode === 'center' ? 'perch' : 'center';
+  const key = dayKey(mode);
+  if (dayCache.has(key)) return;
+  const run = state.run;
+  setTimeout(async () => {
+    if (run !== state.run || dayCache.has(key)) return;
+    const passes = await computeDay(state.date, state.body, mode, run);
+    if (passes) dayCache.set(key, passes);
+  }, 400);
+}
+
 async function refresh() {
   const run = ++state.run;
   writeHash();
+  const cached = dayCache.get(dayKey(state.mode));
+  if (cached) {
+    await renderSpots(cached);
+    if (state.point) inspectPoint(state.point.lat, state.point.lon);
+    precomputeOtherMode();
+    return;
+  }
   const text = `${fmtDay.format(jstMidnight(state.date))}に${BODY_LABEL[state.body]}が${LM.short}の${tip()}に重なる場所を計算しています…`;
   const done = busy(text);
   try {
@@ -707,11 +740,13 @@ async function refresh() {
     document.getElementById('spots').innerHTML = '';
     document.getElementById('spot-cat').hidden = true;
     const passes = await computeDay(state.date, state.body, state.mode, run);
+    if (passes) dayCache.set(dayKey(state.mode), passes);
     if (passes && run === state.run) await renderSpots(passes);
   } finally {
     done();
   }
   if (state.point) inspectPoint(state.point.lat, state.point.lon);
+  if (run === state.run) precomputeOtherMode();
 }
 
 // ---------- reverse search from a chosen point ----------
