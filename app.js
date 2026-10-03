@@ -586,6 +586,7 @@ async function renderSpots(passes) {
         lastPt = p;
         const el = document.createElement('div');
         el.className = 'time-label';
+        el.hidden = !document.getElementById('align-toggle').checked;
         el.textContent = fmtHM.format(p.t);
         timeMarkers.push(new maplibregl.Marker({ element: el, anchor: 'left', offset: [8, 0] }).setLngLat([p.lon, p.lat]).addTo(map));
       }
@@ -980,6 +981,11 @@ function setupControls() {
     state.spotCat = b.dataset.cat;
     applySpotFilter();
   }));
+  document.getElementById('align-toggle').addEventListener('change', (e) => {
+    const v = e.target.checked ? 'visible' : 'none';
+    for (const id of ['align-other', 'align-casing', 'align-visible', 'spots']) map.setLayoutProperty(id, 'visibility', v);
+    timeMarkers.forEach((m) => { m.getElement().hidden = !e.target.checked; });
+  });
   document.getElementById('rec-toggle').addEventListener('change', (e) => {
     recMarkers.forEach((m) => { m.getElement().hidden = !e.target.checked; });
   });

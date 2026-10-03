@@ -84,18 +84,44 @@
       </div>
 
       <div data-panel="layers" hidden>
-        <section class="legend">
+        <section>
           <h2>地図に表示するもの</h2>
-          <label class="toggle"><input type="checkbox" id="heat-toggle" checked> <span class="lm-short"></span>の見え方（色分け）</label>
-          <div class="legend-bar" id="legend-bar"></div>
-          <div class="legend-labels"><span>見えない</span><span><span class="lm-tip">先端</span>だけ</span><span>ほぼ全体</span></div>
-          <label class="toggle"><input type="checkbox" id="rec-toggle" checked> 全体が見える場所（水色の番号）</label>
-          <ul class="marker-legend">
-            <li><span class="cat-dot whole"></span>重なる場所・全体が見える</li>
-            <li><span class="cat-dot part"></span>重なる場所・一部が見える</li>
-            <li><span class="rec-marker sample">1</span>全体が見える場所（重ならない日も）</li>
-          </ul>
-          <label class="toggle"><input type="checkbox" id="bldg-toggle"> 建物を立体表示（地図を傾けます）</label>
+          <!-- one card per layer: what it is and its legend on the left, the switch on the right -->
+          <label class="layer-row">
+            <span class="layer-info">
+              <span class="layer-title">重なる場所</span>
+              <span class="layer-legend">
+                <span class="key"><span class="cat-dot whole"></span>全体が見える</span>
+                <span class="key"><span class="cat-dot part"></span>一部が見える</span>
+                <span class="key"><span class="line-key"></span>重なる位置（時刻つき）</span>
+              </span>
+            </span>
+            <input type="checkbox" class="switch" id="align-toggle" checked>
+          </label>
+          <label class="layer-row">
+            <span class="layer-info">
+              <span class="layer-title">全体が見える場所</span>
+              <span class="layer-legend"><span class="key"><span class="rec-marker sample">1</span>番号は「全体が見える場所」タブの順位</span></span>
+            </span>
+            <input type="checkbox" class="switch" id="rec-toggle" checked>
+          </label>
+          <label class="layer-row">
+            <span class="layer-info">
+              <span class="layer-title"><span class="lm-short"></span>の見え方（色分け）</span>
+              <span class="layer-legend block">
+                <span class="legend-bar" id="legend-bar"></span>
+                <span class="legend-labels"><span>見えない</span><span><span class="lm-tip">先端</span>だけ</span><span>ほぼ全体</span></span>
+              </span>
+            </span>
+            <input type="checkbox" class="switch" id="heat-toggle" checked>
+          </label>
+          <label class="layer-row">
+            <span class="layer-info">
+              <span class="layer-title">建物を立体表示</span>
+              <span class="layer-legend">地図を傾けて、建物を高さつきで表示します</span>
+            </span>
+            <input type="checkbox" class="switch" id="bldg-toggle">
+          </label>
         </section>
         <section>
           <h2>操作</h2>
