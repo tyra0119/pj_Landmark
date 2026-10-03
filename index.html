@@ -50,7 +50,15 @@
       <section>
         <h2>重なって見える場所</h2>
         <p id="summary" class="muted">計算中…</p>
+        <label class="toggle"><input type="checkbox" id="whole-only"> 全体が見える場所だけ<span id="whole-count" class="muted small"></span></label>
         <ol id="spots" class="spots"></ol>
+      </section>
+
+      <section>
+        <h2>全体が見えるおすすめ地点</h2>
+        <p class="muted small">根元近くまで見える場所のうち、開けて広い順。タップすると、その場所で重なる日時を1年分探します。</p>
+        <label class="toggle"><input type="checkbox" id="rec-toggle" checked> 地図に表示</label>
+        <ol id="recs" class="spots recs"></ol>
       </section>
 
       <section class="legend">

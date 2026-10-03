@@ -62,6 +62,10 @@ a { color: var(--accent); }
 .spot-time { font-size: 16px; font-weight: 700; font-variant-numeric: tabular-nums; }
 .spot-place { font-size: 13px; margin-left: 6px; }
 .deck-badge { font-size: 11px; margin-left: 6px; padding: 0 6px; border-radius: 4px; background: rgba(110, 231, 183, 0.15); color: #6ee7b7; }
+.deck-badge.whole { background: rgba(250, 204, 21, 0.15); color: #fde047; }
+.link-btn { display: block; text-align: center; text-decoration: none; box-sizing: border-box; }
+.recs .rank { display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; border: 2px solid #fde047; font-size: 12px; font-weight: 700; margin-right: 6px; }
+.recs .spot-place { margin-left: 0; font-weight: 600; }
 .spot-meta { font-size: 12px; color: var(--muted); margin-top: 4px; font-variant-numeric: tabular-nums; }
 .pass-head { font-size: 12px; color: var(--moon); margin: 10px 0 2px; list-style: none; cursor: default; border: 0 !important; padding: 0 !important; background: none !important; }
 

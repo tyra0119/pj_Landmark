@@ -13,7 +13,8 @@ const BUILDING = -1;
 const OUTSIDE = -2;
 const WATER = -3;
 const VIADUCT = -4;
-const UNSTABLE = -5;   // the standing height changes too fast here (edge of a bridge)
+const UNSTABLE = -5;
+const WHOLE = 7;       // class where the tower is visible down to its lowest level   // the standing height changes too fast here (edge of a bridge)
 
 const WARDS = {
   13101: '千代田区', 13102: '中央区', 13103: '港区', 13104: '新宿区', 13105: '文京区', 13106: '台東区',
@@ -27,6 +28,7 @@ const state = { body: 'Moon', mode: 'center', date: null, meta: null, run: 0, po
 let map, LM, zTop, obsLM, palette, deckKeys;
 let timeMarkers = [];
 let pointMarker = null;
+let spotPopup = null;   // only one spot popup at a time
 
 // ---------- time formatting (always JST) ----------
 const fmtTime = new Intl.DateTimeFormat('ja-JP', { timeZone: 'Asia/Tokyo', hour: '2-digit', minute: '2-digit', second: '2-digit' });
@@ -383,6 +385,8 @@ function renderSpots(passes) {
   timeMarkers = [];
   const all = passes.flatMap((p) => p.spots);
   const label = BODY_LABEL[state.body];
+  const whole = all.filter((s) => s.best >= WHOLE).length;
+  document.getElementById('whole-count').textContent = `（${whole}か所）`;
   document.getElementById('summary').textContent = passes.length === 0
     ? `この日は、半径${state.meta.radius_m / 1000}km以内で${label}がスカイツリーの先端に重なる時間がありません。`
     : all.length === 0
@@ -403,7 +407,8 @@ function renderSpots(passes) {
       const det = spotDetails(spot.mid);
       const secs = Math.round((spot.to - spot.from) / 1000);
       const span = secs >= 1 ? `${secs}秒間` : '一瞬';
-      li.innerHTML = `<span class="spot-time">${fmtTime.format(spot.from)}</span><span class="spot-place">…</span>${spot.onDeck ? '<span class="deck-badge">橋の上</span>' : ''}
+      li.hidden = state.wholeOnly && spot.best < WHOLE;
+      li.innerHTML = `<span class="spot-time">${fmtTime.format(spot.from)}</span><span class="spot-place">…</span>${spot.onDeck ? '<span class="deck-badge">橋の上</span>' : ''}${spot.best >= WHOLE ? '<span class="deck-badge whole">全体が見える</span>' : ''}
         <div class="spot-meta">${(spot.mid.d / 1000).toFixed(2)}km・${compass((spot.mid.az + 360) % 360)}向き・幅${Math.max(2, Math.round(spot.length))}m・${span}<br>
         ${visibleText(spot.best)}・目安${Math.round(det.focal)}mm</div>`;
       li.addEventListener('click', () => focusSpot(spot, li));
@@ -451,14 +456,23 @@ function spotPopupHTML(spot) {
       <dt>塔の見かけ</dt><dd>${det.tower.toFixed(1)}°（${label}の${(det.tower / (2 * s.sd)).toFixed(0)}倍）</dd>
       <dt>焦点距離</dt><dd>約${Math.round(det.focal)}mm で塔が縦位置に収まる（35mm判）</dd>
     </dl>
-    <button class="popup-btn" data-view>この場所からの眺めを見る</button>`;
+    <button class="popup-btn" data-view>この場所からの眺めを見る</button>
+    ${directionsLink(s.lat, s.lon, `${fmtTime.format(spot.from).slice(0, 5)}までに到着`)}`;
+}
+
+// Google Maps opens with the current location as the start (app on phones, web elsewhere)
+function directionsLink(lat, lon, note = '') {
+  const url = `https://www.google.com/maps/dir/?api=1&destination=${lat.toFixed(6)},${lon.toFixed(6)}&travelmode=transit`;
+  return `<a class="popup-btn link-btn" href="${url}" target="_blank" rel="noopener">ここへの道案内（Google マップ）</a>` +
+    (note ? `<p class="small muted" style="margin:4px 0 0">${note}</p>` : '');
 }
 
 function focusSpot(spot, li) {
   document.querySelectorAll('.spots li.active').forEach((e) => e.classList.remove('active'));
   li?.classList.add('active');
   map.flyTo({ center: [spot.mid.lon, spot.mid.lat], zoom: Math.max(map.getZoom(), 17) });
-  const popup = new maplibregl.Popup({ maxWidth: '320px' }).setLngLat([spot.mid.lon, spot.mid.lat]).setHTML(spotPopupHTML(spot)).addTo(map);
+  spotPopup?.remove();
+  const popup = spotPopup = new maplibregl.Popup({ maxWidth: '320px' }).setLngLat([spot.mid.lon, spot.mid.lat]).setHTML(spotPopupHTML(spot)).addTo(map);
   popup.getElement().querySelector('[data-view]').addEventListener('click', () => {
     const s = spot.mid;
     openViewer({
@@ -552,6 +566,7 @@ async function inspectPoint(lat, lon) {
 }
 
 function addViewButton(info, lat, lon, zO, d, time) {
+  info.insertAdjacentHTML('beforeend', directionsLink(lat, lon));
   const btn = document.createElement('button');
   btn.className = 'btn';
   btn.textContent = time ? 'この地点からの眺めを見る（重なる時刻）' : 'この地点からの眺めを見る（現在時刻）';
@@ -564,6 +579,39 @@ function addViewButton(info, lat, lon, zO, d, time) {
     });
   });
   info.append(btn);
+}
+
+// ---------- recommended places with the whole tower in view ----------
+async function loadRecommendations() {
+  const list = document.getElementById('recs');
+  list.innerHTML = '';
+  let recs = [];
+  try {
+    recs = await (await fetch(`data/${state.meta.landmark.id}_recommend.json`)).json();
+  } catch { /* no list for this landmark */ }
+  map.getSource('recs').setData({
+    type: 'FeatureCollection',
+    features: recs.map((r, i) => ({ type: 'Feature', properties: { i, rank: i + 1 }, geometry: { type: 'Point', coordinates: [r.lon, r.lat] } })),
+  });
+  state.recs = recs;
+  recs.forEach((r, i) => {
+    const li = document.createElement('li');
+    const bearing = distBearing(r.lat, r.lon, LM.lat, LM.lon)[1];
+    li.innerHTML = `<span class="rank">${i + 1}</span><span class="spot-place">…</span>
+      <div class="spot-meta">${(r.d / 1000).toFixed(1)}km・${state.meta.landmark.name}は${compass(bearing)}・開けた広さ 約${r.area.toLocaleString()}m²</div>`;
+    li.addEventListener('click', () => selectRecommendation(i));
+    list.append(li);
+    r.li = li;
+    placeName(r.lat, r.lon).then((n) => { li.querySelector('.spot-place').textContent = n || '（地名なし）'; });
+  });
+}
+
+function selectRecommendation(i) {
+  const r = state.recs[i];
+  document.querySelectorAll('#recs li.active').forEach((e) => e.classList.remove('active'));
+  r.li.classList.add('active');
+  map.flyTo({ center: [r.lon, r.lat], zoom: Math.max(map.getZoom(), 16) });
+  inspectPoint(r.lat, r.lon);
 }
 
 // ---------- UI ----------
@@ -583,6 +631,13 @@ function setupControls() {
     state.date = e.target.value;
     syncControls();
     refresh();
+  });
+  document.getElementById('whole-only').addEventListener('change', (e) => {
+    state.wholeOnly = e.target.checked;
+    (state.spots || []).forEach((s) => { if (s.li) s.li.hidden = state.wholeOnly && s.best < WHOLE; });
+  });
+  document.getElementById('rec-toggle').addEventListener('change', (e) => {
+    map.setLayoutProperty('recs', 'visibility', e.target.checked ? 'visible' : 'none');
   });
   document.getElementById('heat-toggle').addEventListener('change', (e) => {
     map.setLayoutProperty('heat', 'visibility', e.target.checked ? 'visible' : 'none');
@@ -676,6 +731,7 @@ function setupMap() {
         align: { type: 'geojson', data: { type: 'FeatureCollection', features: [] } },
         spots: { type: 'geojson', data: { type: 'FeatureCollection', features: [] } },
         sight: { type: 'geojson', data: { type: 'FeatureCollection', features: [] } },
+        recs: { type: 'geojson', data: { type: 'FeatureCollection', features: [] } },
         bldg: {
           type: 'vector', tiles: ['https://indigo-lab.github.io/plateau-tokyo23ku-building-mvt-2020/{z}/{x}/{y}.pbf'],
           minzoom: 10, maxzoom: 16,
@@ -700,6 +756,10 @@ function setupMap() {
           },
         },
         {
+          id: 'recs', type: 'circle', source: 'recs',
+          paint: { 'circle-radius': ['interpolate', ['linear'], ['zoom'], 11, 5, 16, 11], 'circle-color': '#0f172a', 'circle-stroke-color': '#fde047', 'circle-stroke-width': 2.5 },
+        },
+        {
           id: 'spots', type: 'circle', source: 'spots',
           paint: { 'circle-radius': ['interpolate', ['linear'], ['zoom'], 12, 4, 17, 9], 'circle-color': '#fde68a', 'circle-stroke-color': '#0f172a', 'circle-stroke-width': 2 },
         },
@@ -718,12 +778,15 @@ function setupMap() {
   pin.title = LM.name;
   new maplibregl.Marker({ element: pin }).setLngLat([LM.lon, LM.lat]).addTo(map);
 
+  map.on('click', 'recs', (e) => selectRecommendation(e.features[0].properties.i));
+  map.on('mouseenter', 'recs', () => { map.getCanvas().style.cursor = 'pointer'; });
+  map.on('mouseleave', 'recs', () => { map.getCanvas().style.cursor = ''; });
   map.on('click', 'spots', (e) => {
     const spot = state.spots?.[e.features[0].properties.i];
     if (spot) { focusSpot(spot, spot.li); spot.li?.scrollIntoView({ block: 'nearest' }); }
   });
   map.on('click', (e) => {
-    if (map.queryRenderedFeatures(e.point, { layers: ['spots'] }).length) return;
+    if (map.queryRenderedFeatures(e.point, { layers: ['spots', 'recs'] }).length) return;
     inspectPoint(e.lngLat.lat, e.lngLat.lng);
   });
   map.on('mouseenter', 'spots', () => { map.getCanvas().style.cursor = 'pointer'; });
@@ -748,6 +811,7 @@ async function main() {
   setupControls();
   syncControls();
   await setupMap();
+  loadRecommendations();
   refresh();
 }
 

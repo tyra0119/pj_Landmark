@@ -13,6 +13,7 @@ python fetch_dem.py         # 地理院の標高タイル（dem5a → dem5b → 
 python compute_visibility.py  # 建物の高さを敷き詰めた地表モデルで可視判定（約30秒）
 python make_tiles.py        # XYZタイルとメタデータを書き出す
 python make_view_tiles.py   # 眺め（一人称視点）用の建物・橋面タイルを書き出す
+python make_recommend.py    # 全体が見えるおすすめ地点（広く開けた順）を書き出す
 ```
 
 中間データは `~/.cache/landmark`（環境変数 `LANDMARK_CACHE` で変更可）に置きます。CityGMLは1ファイルずつ取得→抽出→削除するので、ディスクに残るのは約400MBです。
