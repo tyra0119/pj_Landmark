@@ -310,7 +310,14 @@
     const fmt = new Intl.DateTimeFormat('ja-JP', { timeZone: 'Asia/Tokyo', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' });
     $('viewer-time').textContent = fmt.format(date);
     $('viewer-offset').textContent = minutes === 0 ? '' : `（${minutes > 0 ? '+' : ''}${minutes}分）`;
-    $('viewer-alt').textContent = `${ctx.body === 'Moon' ? '月' : '太陽'}の高さ ${ctx.bodyPos.alt.toFixed(1)}°`;
+    // where the moon/sun is relative to the landmark, so it can be found when off screen
+    const name = ctx.body === 'Moon' ? '月' : '太陽';
+    const b = ctx.bodyPos;
+    const dAz = wrap180(b.az - ctx.towerBearing);
+    const side = Math.abs(dAz) < 1 ? 'と同じ方向' : `の${dAz > 0 ? '右' : '左'}${Math.abs(dAz).toFixed(0)}°`;
+    $('viewer-alt').textContent = b.alt < -0.5
+      ? `${name}は地平線の下（${window.viewerConfig.landmark.short}${side}）`
+      : `${name}は${window.viewerConfig.landmark.short}${side}・高さ${b.alt.toFixed(1)}°`;
     deckgl?.setProps({ layers: layers(ctx.data) });
     placeOverlay();
   }
@@ -323,9 +330,28 @@
     placeOverlay();
   }
 
+  const wrap180 = (a) => ((a % 360) + 540) % 360 - 180;
+
+  // Aim at the landmark itself. Only when the moon/sun is close enough to share
+  // the frame is the view shifted to hold both; the top always stays in frame.
   function faceTower() {
     const b = ctx.bodyPos;
-    ctx.viewState = { ...ctx.viewState, bearing: ctx.towerBearing, pitch: -Math.min(80, Math.max(0, (ctx.tipAlt + b.alt) / 2)) };
+    const lm = window.viewerConfig.landmark;
+    const el = $('viewer-canvas');
+    const aspect = (el.clientWidth || 1) / (el.clientHeight || 1);
+    const vfov = ctx.fovy;
+    const hfov = 2 * Math.atan(Math.tan(vfov / 2 * D2R) * aspect) / D2R;
+    const baseAlt = Math.atan2(lm.base - ctx.eye - drop(ctx.dist), ctx.dist) / D2R;
+    // a tower: its middle; a far mountain: just below the top (the foot is hidden by hills)
+    let up = lm.far ? ctx.tipAlt - vfov * 0.2 : (ctx.tipAlt + baseAlt) / 2;
+    let az = ctx.towerBearing;
+    const dAz = wrap180(b.az - az);
+    if (b.alt > -1 && Math.abs(dAz) < hfov * 0.4 && Math.abs(b.alt - ctx.tipAlt) < vfov * 0.8) {
+      up = (up + b.alt) / 2;
+      az += dAz / 2;
+    }
+    up = Math.min(Math.max(up, ctx.tipAlt - vfov * 0.4), ctx.tipAlt + vfov * 0.4);
+    ctx.viewState = { ...ctx.viewState, bearing: (az + 360) % 360, pitch: -Math.min(80, Math.max(-20, up)) };
     deckgl?.setProps({ viewState: ctx.viewState });
     placeOverlay();
   }
