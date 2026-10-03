@@ -494,12 +494,33 @@ async function renderSpots(passes) {
   const label = BODY_LABEL[state.body];
   const whole = all.filter((s) => s.best >= WHOLE).length;
   document.getElementById('whole-count').textContent = `（${whole}か所）`;
-  document.getElementById('summary').textContent = passes.length === 0
-    ? `この日は、${areaLabel()}で${label}が${LM.short}の${tip()}に重なる時間がありません。`
-    : all.length === 0
-      ? `${label}は重なりますが、建物に遮られて地上から見える場所が見つかりませんでした。`
-      : `${all.length}か所。線の明るい部分に立つと、その時刻に${label}が${tip()}に重なります。` +
-        (state.body === 'Sun' ? '太陽を直接見たり、減光フィルターなしで撮影したりしないでください。' : '');
+  const summary = document.getElementById('summary');
+  if (all.length === 0) {
+    // nothing to show: say so plainly, why, and what to try next
+    const why = passes.length === 0
+      ? `${label}が${LM.short}の${tip()}と同じ方向・高さに来る時間が、この日はありません（${areaLabel()}から見た場合）。`
+      : `${label}が${tip()}に重なる時間帯はありますが、その位置はすべて${LM.far ? '建物や山' : '建物'}の陰・川の上・高架などで、地上から見える場所がありません。`;
+    summary.innerHTML = `<div class="empty"><strong>この日は、重なって見える場所がありません</strong><p>${why}</p>
+      <p>別の日や、${state.body === 'Moon' ? '太陽' : '月'}・別のランドマークで探してみてください。</p>
+      <div class="empty-actions">
+        <button class="btn" data-shift="-1">前の日</button><button class="btn" data-shift="1">次の日</button>
+        <button class="btn" data-swap-body>${state.body === 'Moon' ? '太陽' : '月'}で探す</button>
+      </div></div>`;
+    summary.querySelectorAll('[data-shift]').forEach((b) => b.addEventListener('click', () => {
+      const t = jstMidnight(state.date).getTime() + Number(b.dataset.shift) * 86400e3 + 12 * 3600e3;
+      state.date = fmtYmd.format(new Date(t));
+      syncControls();
+      refresh();
+    }));
+    summary.querySelector('[data-swap-body]').addEventListener('click', () => {
+      state.body = state.body === 'Moon' ? 'Sun' : 'Moon';
+      syncControls();
+      refresh();
+    });
+  } else {
+    summary.textContent = `${all.length}か所。線の明るい部分に立つと、その時刻に${label}が${tip()}に重なります。` +
+      (state.body === 'Sun' ? '太陽を直接見たり、減光フィルターなしで撮影したりしないでください。' : '');
+  }
   document.getElementById('weather-note').textContent = weatherNote(weather);
 
   for (const pass of passes) {
@@ -510,11 +531,14 @@ async function renderSpots(passes) {
     const wx = weatherText(weather, mid);
     const group = document.createElement('li');
     group.className = 'pass';
-    group.innerHTML = `<div class="pass-head"><strong>${dir}</strong><span class="pass-count">${pass.spots.length}か所</span>
+    group.innerHTML = `<div class="pass-head"><strong>${dir}</strong><span class="pass-count">${pass.spots.length ? `${pass.spots.length}か所` : '見える場所なし'}</span>
       <div class="pass-sub">${fmtHM.format(pass.points[0].t)}〜${fmtHM.format(pass.points.at(-1).t)}${sky ? '・' + sky : ''}${wx ? '・' + wx : ''}</div></div>`;
     const ol = document.createElement('ol');
     ol.className = 'spots';
     group.append(ol);
+    pass.emptyNote = document.createElement('p');
+    pass.emptyNote.className = 'empty-note';
+    group.append(pass.emptyNote);
     list.append(group);
     const score = (s) => s.best * 1e6 + Math.min(s.length, 500) * 1e3 + (s.to - s.from) / 1000;
     const ranked = [...pass.spots].sort((a, b) => score(b) - score(a));
@@ -575,6 +599,12 @@ function applySpotFilter() {
     for (const s of pass.spots) {
       if (s.li) s.li.hidden = state.wholeOnly ? s.best < WHOLE : !(pass.expanded || s.top);
     }
+    // say why a time window shows nothing instead of leaving it blank
+    const shown = pass.spots.some((s) => s.li && !s.li.hidden);
+    pass.emptyNote.hidden = shown;
+    pass.emptyNote.textContent = pass.spots.length === 0
+      ? `この時間帯は、重なる位置がすべて${LM.far ? '建物や山' : '建物'}の陰・川の上・高架などで、見える場所がありません。`
+      : 'この時間帯に全体が見える場所はありません。「全体が見える場所だけ」を外すと表示されます。';
     if (pass.moreBtn) {
       pass.moreBtn.hidden = state.wholeOnly;
       pass.moreBtn.textContent = pass.expanded ? `上位${TOP_SPOTS}件だけ表示` : `ほか${pass.spots.length - TOP_SPOTS}件を表示`;

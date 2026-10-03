@@ -78,6 +78,12 @@ a { color: var(--accent); }
 .pass-head strong { font-size: 14px; color: var(--moon); }
 .pass-count { margin-left: auto; font-size: 12px; color: var(--muted); }
 .pass-sub { flex-basis: 100%; font-size: 12px; color: var(--muted); }
+.empty { border: 1px solid rgba(253, 230, 138, 0.35); background: rgba(253, 230, 138, 0.06); border-radius: 10px; padding: 12px 14px; color: var(--text); }
+.empty strong { display: block; font-size: 15px; color: var(--moon); margin-bottom: 6px; }
+.empty p { margin: 6px 0 0; font-size: 13px; line-height: 1.6; color: var(--muted); }
+.empty-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.empty-actions .btn { width: auto; margin: 0; padding: 6px 12px; font-size: 13px; }
+.empty-note { margin: 8px 0 0; padding: 10px 12px; border-radius: 8px; border: 1px dashed var(--line); font-size: 13px; color: var(--muted); line-height: 1.6; }
 .more-btn { display: block; width: 100%; margin-top: 6px; border: 1px dashed var(--line); background: none; color: var(--accent); border-radius: 8px; padding: 7px; font: inherit; font-size: 13px; cursor: pointer; }
 .more-btn:hover { background: rgba(125, 211, 252, 0.08); }
 
