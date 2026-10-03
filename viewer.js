@@ -74,7 +74,7 @@
   // ---------- building tiles ----------
   async function neededTiles(spot, target, dist, bearing) {
     if (!tileIndex) {
-      const meta = await (await fetch(`${window.viewerConfig.viewTiles}/index.json`)).json();
+      const meta = await (await fetch(`${window.viewerConfig.viewTiles}/index.json?v=${window.viewerConfig.version}`)).json();
       tileIndex = { zoom: meta.zoom, keys: new Set(meta.tiles) };
     }
     const z = tileIndex.zoom;
@@ -95,7 +95,7 @@
   function loadTile(key) {
     if (!tileCache.has(key)) {
       const [x, y] = key.split('/').map(Number);
-      tileCache.set(key, fetch(`${window.viewerConfig.viewTiles}/${tileIndex.zoom}/${key}.json`)
+      tileCache.set(key, fetch(`${window.viewerConfig.viewTiles}/${tileIndex.zoom}/${key}.json?v=${window.viewerConfig.version}`)
         .then((r) => r.json())
         .then((t) => {
           const [lat0, lon0] = tileNW(x, y, tileIndex.zoom);

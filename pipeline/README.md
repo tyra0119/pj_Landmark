@@ -8,7 +8,7 @@ PLATEAUの建物データと国土地理院の標高から、スカイツリー�
 pip install -r pipeline/requirements.txt
 cd pipeline
 python run_all.py tokyotower           # 下の手順をまとめて実行（取得済みなら --no-fetch）
-python fetch_plateau.py     # PLATEAU CityGML（建物・橋・水域、約22GB）を取得し、必要な形状だけ抜き出す（十数分）
+python fetch_plateau.py     # PLATEAU CityGML（建物・橋・水域・道路）を取得し、必要な形状だけ抜き出す（十数分）
 python fetch_osm.py         # OpenStreetMapから高速道路・鉄道の橋（高架）の線を取得
 python fetch_dem.py         # 地理院の標高タイル（dem5a → dem5b → dem10b）
 python compute_visibility.py  # 建物の高さを敷き詰めた地表モデルで可視判定（約30秒）
@@ -25,7 +25,9 @@ python fetch_climate.py     # 過去10年の月・時刻ごとの晴れやすさ
 - 解析グリッド：Webメルカトルのズーム16のピクセル（約1.94m）。スカイツリーから半径8km
 - 障害物：地理院の標高 + PLATEAUのLOD1建物（立体の上端の標高）+ 橋の床面（LOD2のOuterFloorSurface）+ 欄干・遮音壁1.2m
 - 立つ面：地面。歩ける橋（道路橋・歩道橋・デッキ・種類不明）の上は橋面の高さ
-- 立てない場所：建物の中、水域（PLATEAUの水部）、高速道路・鉄道の高架とその下
+- 立てない場所：建物の中、水域（PLATEAUの水部）、高速道路・鉄道の高架とその下、車道
+  - 車道：PLATEAUの道路のLOD2/3「交通領域」のうち車道部・車線・交差部・中央帯・路肩・植樹帯など。歩道部・自転車歩行者道・バス停は立てる
+  - LOD1しかない道路は、両端から4mを歩道とみなし、それより内側を車道とする（幅8m未満の生活道路は全体が立てる場所のまま）
   - PLATEAUの橋は種類が「不明」のものが多いため、OSMの高速道路・鉄道の橋と3割以上重なる橋は高架とみなす
   - PLATEAUに橋の形がない高架（首都高の一部など）は、OSMの線に幅（高速14m・鉄道10m）と高さ（高速12m・鉄道8m）を仮定して補う
 - 可視判定：スカイツリーの高さ630/500/450/350/250/150/50mを視点にして放射状にレイを飛ばし、障害物の仰角の累積最大と目の高さ（立つ面+1.6m）を比べる。地球の丸みと大気差（k=0.13）を補正

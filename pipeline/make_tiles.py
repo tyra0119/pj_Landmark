@@ -4,7 +4,7 @@ Zoom 16 tiles hold the exact classes (the app reads pixels from them);
 zooms 12-15 are overview tiles that keep the best visible class in each 2x2.
 Classes the app must tell apart but never draws are encoded in the alpha
 channel: 0 = building / outside, 1 = water, 2 = viaduct, 3 = closed to the
-public (Imperial Palace), 60 = tip hidden.
+public (Imperial Palace), 4 = carriageway, 60 = tip hidden.
 Deck tiles (zoom 16) carry the standing height on walkable bridges.
 
     python pipeline/make_tiles.py
@@ -12,6 +12,7 @@ Deck tiles (zoom 16) carry the standing height on walkable bridges.
 import datetime
 import json
 import shutil
+from pathlib import Path
 
 import numpy as np
 from PIL import Image
@@ -22,15 +23,15 @@ MIN_ZOOM = 12
 # index = class; 0 = tip hidden, 1..7 = more of the tower visible
 PALETTE = ["#6b7280", "#fef08a", "#fde047", "#facc15", "#f59e0b", "#f97316", "#ea580c", "#c2410c"]
 EXTRA = {254: (len(PALETTE), 0), 255: (len(PALETTE), 0), 253: (len(PALETTE) + 1, 1), 252: (len(PALETTE) + 2, 2),
-         251: (len(PALETTE) + 3, 3)}
+         251: (len(PALETTE) + 3, 3), 250: (len(PALETTE) + 4, 4)}
 HIDDEN_ALPHA = 60  # keep "tip hidden" faint so the base map stays readable
 
 LUT = np.zeros(256, dtype=np.uint8)
 LUT[:len(PALETTE)] = np.arange(len(PALETTE))
 for code, (idx, _) in EXTRA.items():
     LUT[code] = idx
-ALPHA = bytes([HIDDEN_ALPHA] + [255] * (len(PALETTE) - 1) + [0, 1, 2, 3])
-RGB = [int(c[i:i + 2], 16) for c in PALETTE for i in (1, 3, 5)] + [0] * 12
+ALPHA = bytes([HIDDEN_ALPHA] + [255] * (len(PALETTE) - 1) + [0, 1, 2, 3, 4])
+RGB = [int(c[i:i + 2], 16) for c in PALETTE for i in (1, 3, 5)] + [0] * 15
 
 
 def to_palette_image(block):
@@ -42,7 +43,7 @@ def to_palette_image(block):
 
 def downsample(c):
     h, w = c.shape
-    v = np.where(c >= 251, -1, c.astype(np.int16)).reshape(h // 2, 2, w // 2, 2)
+    v = np.where(c >= 250, -1, c.astype(np.int16)).reshape(h // 2, 2, w // 2, 2)
     best = v.max(axis=(1, 3))
     outside = (c == 255).reshape(h // 2, 2, w // 2, 2).all(axis=(1, 3))
     return np.where(best >= 0, best, np.where(outside, 255, 254)).astype(np.uint8)
@@ -122,6 +123,8 @@ def main():
     })
     data = WEB / "data"
     data.mkdir(parents=True, exist_ok=True)
+    # the app outlines the areas closed to observers
+    shutil.copy(Path(__file__).resolve().parent / "data" / "restricted.geojson", data / "restricted.geojson")
     (data / f"{LANDMARK['id']}.json").write_text(json.dumps(meta, ensure_ascii=False, indent=1), encoding="utf-8")
     print("meta written")
 

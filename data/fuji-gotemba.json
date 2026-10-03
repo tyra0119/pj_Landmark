@@ -77,8 +77,8 @@
   29183
  ],
  "generated": "2026-10-03",
- "tiles": "tiles/fuji-gotemba/{z}/{x}/{y}.png?v=202610031547",
- "deck_tiles": "tiles/fuji-gotemba-deck/{z}/{x}/{y}.png?v=202610031547",
+ "tiles": "tiles/fuji-gotemba/{z}/{x}/{y}.png?v=202610031612",
+ "deck_tiles": "tiles/fuji-gotemba-deck/{z}/{x}/{y}.png?v=202610031612",
  "deck_tile_keys": [],
  "data_zoom": 16,
  "min_zoom": 12,

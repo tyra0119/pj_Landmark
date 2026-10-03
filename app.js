@@ -15,6 +15,7 @@ const WATER = -3;
 const VIADUCT = -4;
 const UNSTABLE = -5;
 const RESTRICTED = -6;  // closed to the public (Imperial Palace)
+const ROADWAY = -7;     // carriageway
 const WHOLE = 7;
 const TOP_SPOTS = 5;   // spots listed per time window before "show more"
 const TOP_RECS = 10;       // class where the tower is visible down to its lowest level   // the standing height changes too fast here (edge of a bridge)
@@ -54,6 +55,10 @@ let timeMarkers = [];
 let pointMarker = null;
 let spotPopup = null;   // only one spot popup at a time
 let geolocate = null;
+
+// every publish stamps a version, so browsers never mix old data with new code
+const APP_VERSION = document.querySelector('meta[name="app-version"]')?.content ?? '';
+const dataUrl = (name) => `data/${name}?v=${APP_VERSION}`;
 
 // ---------- time formatting (always JST) ----------
 const fmtTime = new Intl.DateTimeFormat('ja-JP', { timeZone: 'Asia/Tokyo', hour: '2-digit', minute: '2-digit', second: '2-digit' });
@@ -181,7 +186,7 @@ function weatherFor(ymd) {
         }
       } catch { /* fall back to the climatology */ }
     }
-    const climate = await (await fetch(`data/${LM.id}_climate.json`)).json().catch(() => null);
+    const climate = await (await fetch(dataUrl(`${LM.id}_climate.json`))).json().catch(() => null);
     const month = Number(ymd.slice(5, 7));
     return climate ? { kind: 'climate', month, clear: climate.clear[month - 1], years: climate.years } : null;
   })());
@@ -243,6 +248,7 @@ async function classAt(lat, lon) {
   if (p[3] === 1) return WATER;
   if (p[3] === 2) return VIADUCT;
   if (p[3] === 3) return RESTRICTED;
+  if (p[3] === 4) return ROADWAY;
   if (p[3] < 255) return 0;  // "tip hidden" is the only visible translucent class
   const idx = palette.get(`${p[0]},${p[1]},${p[2]}`);
   return idx === undefined ? OUTSIDE : idx;
@@ -809,6 +815,7 @@ async function inspectPoint(lat, lon) {
   else if (cls === WATER) status = '<span class="badge ng">水の上</span> 岸や橋の上を選んでください';
   else if (cls === VIADUCT) status = '<span class="badge ng">高架</span> 高速道路・鉄道の高架とその下は対象外です';
   else if (cls === RESTRICTED) status = '<span class="badge ng">立ち入りできない場所</span> 皇居の中は観測地点として使えません';
+  else if (cls === ROADWAY) status = '<span class="badge ng">車道</span> 車道の上は対象外です。歩道や広場を選んでください';
   else status = cls >= 1 ? `<span class="badge ok">${tip()}が見える</span> ${visibleText(cls)}` : `<span class="badge ng">見えない</span> ${LM.far ? '建物や山に' : '建物に'}遮られます`;
 
   const head = `<p style="margin:0 0 6px">${place || ''}</p><p style="margin:0 0 8px">${status}</p>
@@ -898,7 +905,7 @@ async function loadRecommendations() {
   list.innerHTML = '';
   let recs = [];
   try {
-    recs = await (await fetch(`data/${state.meta.landmark.id}_recommend.json`)).json();
+    recs = await (await fetch(dataUrl(`${state.meta.landmark.id}_recommend.json`))).json();
   } catch { /* no list for this landmark */ }
   recMarkers.forEach((m) => m.remove());
   recMarkers = recs.map((r, i) => {
@@ -1132,14 +1139,14 @@ function heatLayer(m) {
 
 // switch every landmark-specific piece of state; the map, if already built, follows
 async function loadLandmark(id) {
-  const m = await (await fetch(`data/${id}.json`)).json();
+  const m = await (await fetch(dataUrl(`${id}.json`))).json();
   state.meta = m;
   LM = { ...m.landmark, base: m.base_z };
   zTop = m.base_z + m.landmark.height;
   deckKeys = new Set(m.deck_tile_keys || []);
   deckData.clear();
   decksLoaded = null;
-  window.viewerConfig = { id: m.landmark.id, viewTiles: m.view_tiles, landmark: LM };
+  window.viewerConfig = { id: m.landmark.id, viewTiles: m.view_tiles, version: APP_VERSION, landmark: LM };
   const c = m.area_center ?? LM;   // first guess for the sky; refined at each observer
   obsLM = new Astronomy.Observer(c.lat, c.lon, 0);
   palette = new Map(m.palette.map((c, i) => [`${parseInt(c.slice(1, 3), 16)},${parseInt(c.slice(3, 5), 16)},${parseInt(c.slice(5, 7), 16)}`, i]));
@@ -1178,6 +1185,7 @@ function setupMap() {
         align: { type: 'geojson', data: { type: 'FeatureCollection', features: [] } },
         spots: { type: 'geojson', data: { type: 'FeatureCollection', features: [] } },
         sight: { type: 'geojson', data: { type: 'FeatureCollection', features: [] } },
+        restricted: { type: 'geojson', data: dataUrl('restricted.geojson') },
         bldg: {
           type: 'vector', tiles: ['https://indigo-lab.github.io/plateau-tokyo23ku-building-mvt-2020/{z}/{x}/{y}.pbf'],
           minzoom: 10, maxzoom: 16,
@@ -1187,6 +1195,8 @@ function setupMap() {
       layers: [
         { id: 'base', type: 'raster', source: 'gsi', paint: { 'raster-saturation': -0.3 } },
         heatLayer(m),
+        { id: 'restricted-fill', type: 'fill', source: 'restricted', paint: { 'fill-color': '#475569', 'fill-opacity': 0.18 } },
+        { id: 'restricted-line', type: 'line', source: 'restricted', paint: { 'line-color': '#475569', 'line-width': 1.5, 'line-dasharray': [3, 2] } },
         { id: 'sight', type: 'line', source: 'sight', paint: { 'line-color': '#38bdf8', 'line-width': 1.5, 'line-dasharray': [2, 2] } },
         {
           id: 'align-other', type: 'line', source: 'align', filter: ['!=', ['get', 'vis'], 'visible'],

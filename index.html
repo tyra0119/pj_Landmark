@@ -6,7 +6,8 @@
   <title>ランドマーク × 月/太陽 撮影スポット案内</title>
   <meta name="description" content="PLATEAUの3D都市モデルで、月や太陽がスカイツリーや東京タワーの先端に重なって見える地上の場所と時刻を探すアプリ">
   <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
-  <link rel="stylesheet" href="style.css">
+  <meta name="app-version" content="20261003161436">
+  <link rel="stylesheet" href="style.css?v=20261003161436">
 </head>
 <body>
   <div id="map"></div>
@@ -121,6 +122,12 @@
             </span>
             <input type="checkbox" class="switch" id="heat-toggle" checked>
           </label>
+          <div class="layer-row static">
+            <span class="layer-info">
+              <span class="layer-title">観測地点の対象外</span>
+              <span class="layer-legend"><span class="key"><span class="restricted-key"></span>皇居の中（灰色の点線の範囲）。建物の中・水面・車道・高架も対象外です</span></span>
+            </span>
+          </div>
           <label class="layer-row">
             <span class="layer-info">
               <span class="layer-title">建物を立体表示</span>
@@ -135,7 +142,7 @@
           <button id="locate" class="btn">現在地から探す</button>
         </section>
         <footer class="notes">
-          <p>橋の上は橋面の高さで計算し、川や池の上、高速道路・鉄道の高架とその下、皇居の中は候補から外しています。街路樹・電線・データ作成後の新しい建物は計算に入っていません。現地で確認してください。</p>
+          <p>橋の上は橋面の高さで計算し、川や池の上、高速道路・鉄道の高架とその下、車道、皇居の中は候補から外しています。街路樹・電線・データ作成後の新しい建物は計算に入っていません。現地で確認してください。</p>
           <p>建物：<a href="https://www.mlit.go.jp/plateau/" target="_blank" rel="noopener">国土交通省 Project PLATEAU</a>（CC BY 4.0）<br>
             標高・地図：<a href="https://maps.gsi.go.jp/development/ichiran.html" target="_blank" rel="noopener">地理院タイル</a><br>
             立体の建物（地図）：<a href="https://github.com/indigo-lab/plateau-tokyo23ku-building-mvt-2020" target="_blank" rel="noopener">indigo-lab PLATEAU MVT（2020年度）</a><br>
@@ -173,7 +180,7 @@
 
   <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/astronomy-engine@2.1.19/astronomy.browser.min.js"></script>
-  <script src="viewer.js"></script>
-  <script src="app.js"></script>
+  <script src="viewer.js?v=20261003161436"></script>
+  <script src="app.js?v=20261003161436"></script>
 </body>
 </html>

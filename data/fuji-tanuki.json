@@ -77,8 +77,8 @@
   23412
  ],
  "generated": "2026-10-03",
- "tiles": "tiles/fuji-tanuki/{z}/{x}/{y}.png?v=202610031546",
- "deck_tiles": "tiles/fuji-tanuki-deck/{z}/{x}/{y}.png?v=202610031546",
+ "tiles": "tiles/fuji-tanuki/{z}/{x}/{y}.png?v=202610031611",
+ "deck_tiles": "tiles/fuji-tanuki-deck/{z}/{x}/{y}.png?v=202610031611",
  "deck_tile_keys": [],
  "data_zoom": 16,
  "min_zoom": 12,

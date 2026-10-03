@@ -77,8 +77,8 @@
   90982
  ],
  "generated": "2026-10-03",
- "tiles": "tiles/fuji-yokohama/{z}/{x}/{y}.png?v=202610031532",
- "deck_tiles": "tiles/fuji-yokohama-deck/{z}/{x}/{y}.png?v=202610031532",
+ "tiles": "tiles/fuji-yokohama/{z}/{x}/{y}.png?v=202610031605",
+ "deck_tiles": "tiles/fuji-yokohama-deck/{z}/{x}/{y}.png?v=202610031605",
  "deck_tile_keys": [
   "58194/25848",
   "58191/25849",

@@ -1,10 +1,12 @@
 """Download PLATEAU CityGML around the landmark and keep only what the analysis needs.
 
-    python pipeline/fetch_plateau.py [bldg] [brid] [wtr] [--workers N]
+    python pipeline/fetch_plateau.py [bldg] [brid] [wtr] [tran] [--workers N]
 
 - bldg: LOD1 prism per building -> footprint ring, base and top height
 - brid: per bridge -> function code, LOD1 footprint/top, LOD2 deck (OuterFloorSurface) rings
 - wtr:  water surface polygons (exterior and interior rings)
+- tran: road surfaces: carriageway parts (LOD2/3 traffic areas) and, for roads
+        modelled only in LOD1, the whole road polygon
 
 Each CityGML file is streamed to a temp file, reduced to a .npz in the cache,
 and deleted. Re-runs skip files that are already extracted.
@@ -27,6 +29,11 @@ GML = "{http://www.opengis.net/gml}"
 BLDG = "{http://www.opengis.net/citygml/building/2.0}"
 BRID = "{http://www.opengis.net/citygml/bridge/2.0}"
 WTR = "{http://www.opengis.net/citygml/waterbody/2.0}"
+TRAN = "{http://www.opengis.net/citygml/transportation/2.0}"
+# traffic-area functions where people cannot stand (carriageway, median, shoulder, planting...)
+CARRIAGEWAY = {1000, 1010, 1020, 1030, 1040, 1050, 1060, 1070, 1080, 1090, 1100, 1110, 1130,
+               3000, 3010, 3020, 5000, 5010, 5020}
+ROAD_CARRIAGEWAY, ROAD_LOD1 = 1, 2
 
 
 def mesh_center(code):
@@ -127,7 +134,35 @@ def extract_wtr(path):
                 interior=np.array(interior, dtype=bool))
 
 
-EXTRACT = {"bldg": extract_bldg, "brid": extract_brid, "wtr": extract_wtr}
+def extract_tran(path):
+    """Ring kind 1: carriageway from traffic areas; kind 2: a road known only as a LOD1 polygon."""
+    offsets, coords, kind = [0], [], []
+
+    def add(rings, k):
+        for r in rings:
+            if len(r) >= 3:
+                coords.append(r[:, :2])
+                offsets.append(offsets[-1] + len(r))
+                kind.append(k)
+
+    for road in iter_features(path, TRAN + "Road"):
+        areas = list(road.iter(TRAN + "TrafficArea", TRAN + "AuxiliaryTrafficArea"))
+        if areas:
+            for a in areas:
+                f = a.find(TRAN + "function")
+                code = int(f.text) if f is not None and f.text and f.text.strip().isdigit() else 0
+                if code in CARRIAGEWAY:
+                    add(rings_of(a), ROAD_CARRIAGEWAY)
+        else:
+            lod1 = road.find(TRAN + "lod1MultiSurface")
+            if lod1 is not None:
+                add(rings_of(lod1), ROAD_LOD1)
+    return dict(offsets=np.array(offsets, dtype=np.int64),
+                coords=np.concatenate(coords) if coords else np.zeros((0, 2)),
+                kind=np.array(kind, dtype=np.uint8))
+
+
+EXTRACT = {"bldg": extract_bldg, "brid": extract_brid, "wtr": extract_wtr, "tran": extract_tran}
 
 
 def process(kind, f):

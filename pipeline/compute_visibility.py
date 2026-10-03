@@ -28,7 +28,9 @@ from PIL import Image, ImageDraw
 from common import (EARTH_R, EXCLUDE_MIN_HEIGHT, EXCLUDE_RADIUS_M, EYE_HEIGHT, LANDMARK, LEVELS, OUT,
                     RADIUS_M, REFRACTION_K, ground_res, grid_spec, landmark_files, world_px)
 
+CLS_ROADWAY = 250   # carriageway (people stand on pavements, not in the road)
 CLS_RESTRICTED = 251  # places the public cannot use (pipeline/data/restricted.geojson)
+PAVEMENT_M = 4.0    # roads known only in LOD1: this much from each edge counts as pavement
 CLS_VIADUCT = 252   # expressway / railway deck, or the street under it
 CLS_WATER = 253
 CLS_BUILDING = 254
@@ -112,6 +114,27 @@ def rasterise_restricted(g):
             x, y = to_px(np.array(ring)[:, ::-1], g)
             draw.polygon(list(zip(x.tolist(), y.tolist())), fill=1)
     return np.asarray(img, dtype=bool)
+
+
+def rasterise_roads(g):
+    """Carriageway: LOD2/3 traffic areas, plus the middle of LOD1-only roads (edges kept as
+    pavement, so narrow streets without a pavement stay usable)."""
+    carriage = Image.new("L", (g["w"], g["h"]), 0)
+    lod1 = Image.new("L", (g["w"], g["h"]), 0)
+    dc, dl = ImageDraw.Draw(carriage), ImageDraw.Draw(lod1)
+    files = landmark_files("tran") if (OUT / "files_tran.json").exists() else []
+    for f in files:
+        d = np.load(f)
+        if len(d["kind"]) == 0:
+            continue
+        x, y = to_px(d["coords"], g)
+        off = d["offsets"]
+        for i, k in enumerate(d["kind"]):
+            a, b = off[i], off[i + 1]
+            (dc if k == 1 else dl).polygon(list(zip(x[a:b].tolist(), y[a:b].tolist())), fill=1)
+    from scipy import ndimage
+    inner = ndimage.binary_erosion(np.asarray(lod1, dtype=bool), iterations=max(1, round(PAVEMENT_M / ground_res())))
+    return np.asarray(carriage, dtype=bool) | inner
 
 
 def rasterise_osm(g):
@@ -209,6 +232,9 @@ def build_surfaces(g, t0):
     status[viaduct] = CLS_VIADUCT
     status[water & ~on_deck] = CLS_WATER
     status[inside] = CLS_BUILDING
+    road = rasterise_roads(g)
+    status[road & (status == 0)] = CLS_ROADWAY
+    print(f"carriageway {road.mean():.1%}", flush=True)
     print(f"DSM ready {time.time() - t0:.0f}s  bridges {bstats}  water {water.mean():.1%}", flush=True)
     return ground, dsm, stand, status, deck, n_bldg, bstats
 
