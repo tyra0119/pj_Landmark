@@ -13,6 +13,7 @@ const BUILDING = -1;
 const OUTSIDE = -2;
 const WATER = -3;
 const VIADUCT = -4;
+const UNSTABLE = -5;   // the standing height changes too fast here (edge of a bridge)
 
 const WARDS = {
   13101: '千代田区', 13102: '中央区', 13103: '港区', 13104: '新宿区', 13105: '文京区', 13106: '台東区',
@@ -136,18 +137,35 @@ function decodeDem(p) {
   if (v === 8388608) return null;
   return (v < 8388608 ? v : v - 16777216) * 0.01;
 }
-async function elevationAt(lat, lon) {
-  // on a walkable bridge you stand on the deck, not on the river
-  const z16 = state.meta.data_zoom;
-  const [x, y] = worldPx(lat, lon, z16);
-  if (deckKeys.has(`${Math.floor(x / 256)}/${Math.floor(y / 256)}`)) {
-    const p = await samplePixel((z, tx, ty) => state.meta.deck_tiles.replace('{z}', z).replace('{x}', tx).replace('{y}', ty), lat, lon, z16);
-    if (p && p[3] === 255) return decodeDem(p);
-  }
+// walkable bridge decks: all deck tiles are small, so they are loaded once and read synchronously
+const deckData = new Map();
+let decksLoaded = null;
+const deckUrl = (x, y) => state.meta.deck_tiles.replace('{z}', state.meta.data_zoom).replace('{x}', x).replace('{y}', y);
+function loadDecks() {
+  decksLoaded ??= Promise.all([...deckKeys].map(async (k) => {
+    const [x, y] = k.split('/');
+    deckData.set(k, await pixels(deckUrl(x, y)));
+  }));
+  return decksLoaded;
+}
+function deckHeight(lat, lon) {
+  const [x, y] = worldPx(lat, lon, state.meta.data_zoom);
+  const tx = Math.floor(x / 256), ty = Math.floor(y / 256);
+  const data = deckData.get(`${tx}/${ty}`);
+  if (!data) return null;
+  const i = ((Math.floor(y) - ty * 256) * 256 + (Math.floor(x) - tx * 256)) * 4;
+  return data[i + 3] === 255 ? decodeDem([data[i], data[i + 1], data[i + 2]]) : null;
+}
+async function groundAt(lat, lon) {
   const gsi = (layer) => (z, x, y) => `https://cyberjapandata.gsi.go.jp/xyz/${layer}/${z}/${x}/${y}.png`;
   const h = decodeDem(await samplePixel(gsi('dem5a_png'), lat, lon, 15)) ??
     decodeDem(await samplePixel(gsi('dem10b_png'), lat, lon, 14));
   return h ?? 0;
+}
+// height you stand at: the deck on a walkable bridge, otherwise the ground
+async function elevationAt(lat, lon) {
+  await loadDecks();
+  return deckHeight(lat, lon) ?? groundAt(lat, lon);
 }
 const geoCache = new Map();
 async function placeName(lat, lon) {
@@ -179,7 +197,7 @@ async function computeDay(ymd, body, mode, run) {
   }
 
   // 2) correct for the local ground height (tiles fetched in parallel)
-  const ground = await Promise.all(cands.map((c) => elevationAt(c.lat, c.lon)));
+  const [ground] = await Promise.all([Promise.all(cands.map((c) => groundAt(c.lat, c.lon))), loadDecks()]);
   if (run !== state.run) return null;
   const passes = [];
   let cur = null, prevK = -2;
@@ -191,10 +209,10 @@ async function computeDay(ymd, body, mode, run) {
     // a new pass after a gap, or when the body crosses the meridian (south)
     if (c.k !== prevK + 1 || (cur && (cur.points.at(-1).az < 180) !== (c.h.az < 180))) { cur = { points: [] }; passes.push(cur); }
     prevK = c.k;
-    cur.points.push({ t: c.t, lat, lon, d, az: c.h.az, alt: c.h.alt, sd: c.h.sd, zO });
+    cur.points.push({ t: c.t, lat, lon, d, az: c.h.az, alt: c.h.alt, sd: c.h.sd, zO, target: c.target, bearing: c.bearing });
   });
 
-  // 3) sample visibility every SAMPLE_M metres along each pass
+  // 3) sample the ground-level line every SAMPLE_M metres, each with its own ground height
   for (const pass of passes) {
     pass.rising = pass.points[0].az < 180;
     pass.samples = [];
@@ -202,24 +220,108 @@ async function computeDay(ymd, body, mode, run) {
     for (let i = 0; i < pts.length; i++) {
       const p = pts[i], q = pts[i + 1];
       const m = q ? Math.max(1, Math.ceil(distBearing(p.lat, p.lon, q.lat, q.lon)[0] / SAMPLE_M)) : 1;
-      for (let j = 0; j < m; j++) {
-        const f = j / m;
-        const lerp = (key) => q ? p[key] + (q[key] - p[key]) * f : p[key];
-        pass.samples.push({ t: lerp('t'), lat: lerp('lat'), lon: lerp('lon'), d: lerp('d'), alt: lerp('alt'), az: lerp('az'), sd: p.sd, zO: lerp('zO') });
-      }
+      for (let j = 0; j < m; j++) pass.samples.push(lerpPoint(p, q, j / m));
     }
   }
   const samples = passes.flatMap((p) => p.samples);
+  const relocate = (s, g) => {
+    s.zO = g + state.meta.eye_height;
+    s.d = solveDistance(s.target, s.zO);
+    [s.lat, s.lon] = offset(LM.lat, LM.lon, s.bearing, s.d);
+  };
+  for (let round = 0; round < 2; round++) {
+    const g = await Promise.all(samples.map((s) => groundAt(s.lat, s.lon)));
+    samples.forEach((s, i) => relocate(s, g[i]));
+  }
+  const check = await Promise.all(samples.map((s) => groundAt(s.lat, s.lon)));
   const classes = await Promise.all(samples.map((s) => classAt(s.lat, s.lon)));
   if (run !== state.run) return null;
-  samples.forEach((s, i) => { s.cls = classes[i]; });
-  passes.forEach((p) => { p.spots = findSpots(p.samples); });
+  samples.forEach((s, i) => {
+    const stable = Math.abs(check[i] + state.meta.eye_height - s.zO) < 1;
+    // on a bridge deck the ground-level answer does not apply (you would be under the deck)
+    s.cls = !stable ? UNSTABLE : deckHeight(s.lat, s.lon) !== null ? UNSTABLE
+      : s.d > state.meta.radius_m || s.d < MIN_DIST ? OUTSIDE : classes[i];
+  });
+
+  // 4) on a bridge the eye is higher, so the tip looks lower and the alignment happens
+  //    closer in on the same ray: walk each ray inward and find where the deck height fits
+  for (const pass of passes) {
+    pass.deckSamples = findDeckRoots(pass.points);
+  }
+  const decks = passes.flatMap((p) => p.deckSamples);
+  const deckClasses = await Promise.all(decks.map((s) => classAt(s.lat, s.lon)));
+  if (run !== state.run) return null;
+  decks.forEach((s, i) => { s.cls = deckClasses[i]; });
+  passes.forEach((p) => {
+    p.spots = [...findSpots(p.samples), ...findSpots(p.deckSamples, true)].sort((x, y) => x.from - y.from);
+  });
   return passes;
 }
 
-function findSpots(samples) {
+function lerpPoint(p, q, f) {
+  const lerp = (key) => q ? p[key] + (q[key] - p[key]) * f : p[key];
+  return {
+    t: lerp('t'), lat: lerp('lat'), lon: lerp('lon'), d: lerp('d'), alt: lerp('alt'), az: lerp('az'), sd: p.sd,
+    zO: lerp('zO'), target: lerp('target'), bearing: lerp('bearing'),
+  };
+}
+
+const DECK_STEP_SEC = 1;
+const DECK_SEARCH_M = 450;   // decks are at most ~30 m above ground
+// quick test: does the ray segment touch any tile that has a walkable deck?
+function rayHasDeck(bearing, d0, d1) {
+  for (let d = d0; d <= d1 + 100; d += 100) {
+    const [lat, lon] = offset(LM.lat, LM.lon, bearing, Math.min(d, d1));
+    const [x, y] = worldPx(lat, lon, state.meta.data_zoom);
+    if (deckKeys.has(`${Math.floor(x / 256)}/${Math.floor(y / 256)}`)) return true;
+  }
+  return false;
+}
+
+function findDeckRoots(points) {
+  const out = [];
+  const eye = state.meta.eye_height;
+  for (let i = 0; i + 1 < points.length; i++) {
+    const p = points[i], q = points[i + 1];
+    for (let t = p.t; t < q.t; t += DECK_STEP_SEC * 1000) {
+      const s = lerpPoint(p, q, (t - p.t) / (q.t - p.t));
+      const tan = Math.tan(s.target * D2R);
+      const dEnd = Math.max(s.d - DECK_SEARCH_M, MIN_DIST);
+      if (!rayHasDeck(s.bearing, dEnd, s.d)) continue;
+      let prev = null;
+      for (let d = s.d; d > dEnd; d -= 1.5) {
+        const [lat, lon] = offset(LM.lat, LM.lon, s.bearing, d);
+        const h = deckHeight(lat, lon);
+        if (h === null) { prev = null; continue; }
+        const f = h + eye - (zTop - drop(d) - d * tan);   // > 0: eye above the line to the tip
+        if (prev !== null && Math.sign(f) !== Math.sign(prev)) {
+          out.push({ ...s, d, lat, lon, zO: h + eye, onDeck: true });
+          break;
+        }
+        prev = f;
+      }
+    }
+  }
+  return out;
+}
+
+function findSpots(samples, onDeck = false) {
   const spots = [];
   let run = null, gap = 0;
+  if (onDeck) {
+    // deck roots are 1 s apart; split where time or place jumps
+    samples.forEach((s, i) => {
+      const prev = samples[i - 1];
+      const jump = !prev || s.t - prev.t > 3000 || distBearing(prev.lat, prev.lon, s.lat, s.lon)[0] > 30;
+      if (jump || s.cls < 1) { if (run) spots.push(run); run = null; }
+      if (s.cls >= 1) {
+        if (!run) run = { start: i, end: i, best: s.cls };
+        run.end = i; run.best = Math.max(run.best, s.cls);
+      }
+    });
+    if (run) spots.push(run);
+    return spots.map((r) => toSpot(samples, r, true));
+  }
   const close = () => {
     if (run && run.end - run.start >= 1) spots.push(run);
     run = null;
@@ -231,21 +333,26 @@ function findSpots(samples) {
     } else if (run && ++gap > MERGE_GAP) close();
   });
   close();
-  return spots.map((r) => {
-    const a = samples[r.start], b = samples[r.end], mid = samples[Math.round((r.start + r.end) / 2)];
-    return { from: a.t, to: b.t, mid, length: distBearing(a.lat, a.lon, b.lat, b.lon)[0], best: r.best, coords: samples.slice(r.start, r.end + 1).map((s) => [s.lon, s.lat]) };
-  });
+  return spots.map((r) => toSpot(samples, r, false));
+}
+
+function toSpot(samples, r, onDeck) {
+  const a = samples[r.start], b = samples[r.end], mid = samples[Math.round((r.start + r.end) / 2)];
+  return { from: a.t, to: b.t, mid, onDeck, length: distBearing(a.lat, a.lon, b.lat, b.lon)[0], best: r.best };
 }
 
 // ---------- rendering ----------
 function pathGeoJSON(passes) {
   const features = [];
   for (const pass of passes) {
-    let seg = null;
+    let seg = null, prev = null;
     pass.samples.forEach((s) => {
       const vis = s.cls >= 1 ? 'visible' : s.cls === 0 ? 'hidden' : 'blocked';
+      const jump = prev && distBearing(prev.lat, prev.lon, s.lat, s.lon)[0] > 4 * SAMPLE_M;
+      prev = s;
+      if (jump) seg = null;  // e.g. where a bridge deck lifts the eye and moves the spot
       if (!seg || seg.properties.vis !== vis) {
-        if (seg) seg.geometry.coordinates.push([s.lon, s.lat]);
+        if (seg && !jump) seg.geometry.coordinates.push([s.lon, s.lat]);
         seg = { type: 'Feature', properties: { vis }, geometry: { type: 'LineString', coordinates: [[s.lon, s.lat]] } };
         features.push(seg);
       } else seg.geometry.coordinates.push([s.lon, s.lat]);
@@ -296,7 +403,7 @@ function renderSpots(passes) {
       const det = spotDetails(spot.mid);
       const secs = Math.round((spot.to - spot.from) / 1000);
       const span = secs >= 1 ? `${secs}秒間` : '一瞬';
-      li.innerHTML = `<span class="spot-time">${fmtTime.format(spot.from)}</span><span class="spot-place">…</span>
+      li.innerHTML = `<span class="spot-time">${fmtTime.format(spot.from)}</span><span class="spot-place">…</span>${spot.onDeck ? '<span class="deck-badge">橋の上</span>' : ''}
         <div class="spot-meta">${(spot.mid.d / 1000).toFixed(2)}km・${compass((spot.mid.az + 360) % 360)}向き・幅${Math.max(2, Math.round(spot.length))}m・${span}<br>
         ${visibleText(spot.best)}・目安${Math.round(det.focal)}mm</div>`;
       li.addEventListener('click', () => focusSpot(spot, li));
@@ -321,7 +428,7 @@ function renderSpots(passes) {
     }
   }
 
-  map.getSource('align').setData(pathGeoJSON(passes));
+  map.getSource('align').setData(pathGeoJSON([...passes, ...passes.map((p) => ({ samples: p.deckSamples }))]));
   map.getSource('spots').setData({
     type: 'FeatureCollection',
     features: all.map((s, i) => ({ type: 'Feature', id: i, properties: { i }, geometry: { type: 'Point', coordinates: [s.mid.lon, s.mid.lat] } })),
@@ -343,14 +450,23 @@ function spotPopupHTML(spot) {
       <dt>見え方</dt><dd>${visibleText(spot.best)}</dd>
       <dt>塔の見かけ</dt><dd>${det.tower.toFixed(1)}°（${label}の${(det.tower / (2 * s.sd)).toFixed(0)}倍）</dd>
       <dt>焦点距離</dt><dd>約${Math.round(det.focal)}mm で塔が縦位置に収まる（35mm判）</dd>
-    </dl>`;
+    </dl>
+    <button class="popup-btn" data-view>この場所からの眺めを見る</button>`;
 }
 
 function focusSpot(spot, li) {
   document.querySelectorAll('.spots li.active').forEach((e) => e.classList.remove('active'));
   li?.classList.add('active');
   map.flyTo({ center: [spot.mid.lon, spot.mid.lat], zoom: Math.max(map.getZoom(), 17) });
-  new maplibregl.Popup({ maxWidth: '320px' }).setLngLat([spot.mid.lon, spot.mid.lat]).setHTML(spotPopupHTML(spot)).addTo(map);
+  const popup = new maplibregl.Popup({ maxWidth: '320px' }).setLngLat([spot.mid.lon, spot.mid.lat]).setHTML(spotPopupHTML(spot)).addTo(map);
+  popup.getElement().querySelector('[data-view]').addEventListener('click', () => {
+    const s = spot.mid;
+    openViewer({
+      lat: s.lat, lon: s.lon, ground: s.zO - state.meta.eye_height, time: s.t, body: state.body,
+      focal: Math.round(Math.min(800, Math.max(24, spotDetails(s).focal * 24 / 36))),
+      title: `${fmtTime.format(s.t).slice(0, 5)} の眺め`,
+    });
+  });
   if (window.matchMedia('(max-width: 720px)').matches) document.getElementById('panel').classList.add('collapsed');
 }
 
@@ -392,7 +508,11 @@ async function inspectPoint(lat, lon) {
   const head = `<p style="margin:0 0 6px">${place || ''}</p><p style="margin:0 0 8px">${status}</p>
     <dl class="kv"><dt>距離</dt><dd>${(d / 1000).toFixed(2)}km・${compass(bearing)}</dd><dt>先端の高さ</dt><dd>${tipAlt.toFixed(2)}°</dd></dl>`;
   info.innerHTML = head + '<p class="muted small">1年分の重なりを計算中…</p>';
-  if (cls < 0 || d < MIN_DIST) { info.innerHTML = head; return; }
+  if (cls < 0 || d < MIN_DIST) {
+    info.innerHTML = head;
+    if (cls >= 0) addViewButton(info, lat, lon, zO, d);
+    return;
+  }
 
   const obs = new Astronomy.Observer(lat, lon, zO);
   const body = state.body;
@@ -428,6 +548,22 @@ async function inspectPoint(lat, lon) {
     ? `<p class="small muted" style="margin:10px 0 0">これから1年で${BODY_LABEL[body]}が先端に重なる日時（${items.length}回）</p><ul class="events">${items.join('')}</ul>`
     : `<p class="small muted">これから1年、この地点では${BODY_LABEL[body]}が先端に重なりません。</p>`);
   if (cls === 0) info.insertAdjacentHTML('beforeend', '<p class="small muted">※この地点は建物で先端が隠れるため、実際には見えません。</p>');
+  addViewButton(info, lat, lon, zO, d, events[0]?.t);
+}
+
+function addViewButton(info, lat, lon, zO, d, time) {
+  const btn = document.createElement('button');
+  btn.className = 'btn';
+  btn.textContent = time ? 'この地点からの眺めを見る（重なる時刻）' : 'この地点からの眺めを見る（現在時刻）';
+  btn.addEventListener('click', () => {
+    const tower = Math.atan2(zTop - zO, d) - Math.atan2(LM.base - zO, d);
+    openViewer({
+      lat, lon, ground: zO - state.meta.eye_height, time: time ?? Date.now(), body: state.body,
+      focal: Math.round(Math.min(800, Math.max(24, 24 * 0.8 / (2 * Math.tan(tower / 2))))),
+      title: time ? `${fmtDay.format(time)} の眺め` : '今の眺め',
+    });
+  });
+  info.append(btn);
 }
 
 // ---------- UI ----------
@@ -450,6 +586,10 @@ function setupControls() {
   });
   document.getElementById('heat-toggle').addEventListener('change', (e) => {
     map.setLayoutProperty('heat', 'visibility', e.target.checked ? 'visible' : 'none');
+  });
+  document.getElementById('bldg-toggle').addEventListener('change', (e) => {
+    map.setLayoutProperty('bldg3d', 'visibility', e.target.checked ? 'visible' : 'none');
+    map.easeTo({ pitch: e.target.checked ? 60 : 0, zoom: e.target.checked ? Math.max(map.getZoom(), 15) : map.getZoom() });
   });
   document.getElementById('sheet-toggle').addEventListener('click', () => document.getElementById('panel').classList.toggle('collapsed'));
   document.getElementById('locate').addEventListener('click', () => {
@@ -536,6 +676,11 @@ function setupMap() {
         align: { type: 'geojson', data: { type: 'FeatureCollection', features: [] } },
         spots: { type: 'geojson', data: { type: 'FeatureCollection', features: [] } },
         sight: { type: 'geojson', data: { type: 'FeatureCollection', features: [] } },
+        bldg: {
+          type: 'vector', tiles: ['https://indigo-lab.github.io/plateau-tokyo23ku-building-mvt-2020/{z}/{x}/{y}.pbf'],
+          minzoom: 10, maxzoom: 16,
+          attribution: '<a href="https://github.com/indigo-lab/plateau-tokyo23ku-building-mvt-2020" target="_blank">PLATEAU MVT (indigo-lab)</a>',
+        },
       },
       layers: [
         { id: 'base', type: 'raster', source: 'gsi', paint: { 'raster-saturation': -0.5, 'raster-brightness-max': 0.8 } },
@@ -547,6 +692,13 @@ function setupMap() {
         },
         { id: 'align-casing', type: 'line', source: 'align', filter: ['==', ['get', 'vis'], 'visible'], layout: { 'line-cap': 'round' }, paint: { 'line-color': '#0f172a', 'line-width': 9 } },
         { id: 'align-visible', type: 'line', source: 'align', filter: ['==', ['get', 'vis'], 'visible'], layout: { 'line-cap': 'round' }, paint: { 'line-color': '#7dd3fc', 'line-width': 5 } },
+        {
+          id: 'bldg3d', type: 'fill-extrusion', source: 'bldg', 'source-layer': 'bldg', minzoom: 14, layout: { visibility: 'none' },
+          paint: {
+            'fill-extrusion-color': ['interpolate', ['linear'], ['get', 'measuredHeight'], 0, '#c7ccd6', 60, '#9aa4b8', 200, '#6b7a99'],
+            'fill-extrusion-height': ['get', 'measuredHeight'], 'fill-extrusion-opacity': 0.85,
+          },
+        },
         {
           id: 'spots', type: 'circle', source: 'spots',
           paint: { 'circle-radius': ['interpolate', ['linear'], ['zoom'], 12, 4, 17, 9], 'circle-color': '#fde68a', 'circle-stroke-color': '#0f172a', 'circle-stroke-width': 2 },
@@ -585,6 +737,7 @@ async function main() {
   LM = { ...m.landmark, base: m.base_z };
   zTop = m.base_z + m.landmark.height;
   deckKeys = new Set(m.deck_tile_keys || []);
+  window.viewerConfig = { id: m.landmark.id, landmark: { ...m.landmark, base: m.base_z } };
   obsLM = new Astronomy.Observer(LM.lat, LM.lon, 0);
   palette = new Map(m.palette.map((c, i) => [`${parseInt(c.slice(1, 3), 16)},${parseInt(c.slice(3, 5), 16)},${parseInt(c.slice(5, 7), 16)}`, i]));
   document.getElementById('data-info').textContent = `PLATEAU建物 ${m.buildings.toLocaleString()}棟・半径${m.radius_m / 1000}km・${m.generated}作成`;

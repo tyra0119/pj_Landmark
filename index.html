@@ -56,6 +56,7 @@
       <section class="legend">
         <h2>スカイツリーの見え方</h2>
         <label class="toggle"><input type="checkbox" id="heat-toggle" checked> 地図に表示</label>
+        <label class="toggle"><input type="checkbox" id="bldg-toggle"> 建物を立体表示</label>
         <div class="legend-bar" id="legend-bar"></div>
         <div class="legend-labels"><span>見えない</span><span>先端だけ</span><span>ほぼ全体</span></div>
         <p class="muted small">地図をタップすると、その地点から重なる日時を1年分探します。</p>
@@ -66,6 +67,8 @@
         <p>橋の上は橋面の高さで計算し、川や池の上、高速道路・鉄道の高架とその下は候補から外しています。街路樹・電線・データ作成後の新しい建物は計算に入っていません。現地で確認してください。</p>
         <p>建物：<a href="https://www.mlit.go.jp/plateau/" target="_blank" rel="noopener">国土交通省 Project PLATEAU</a>（CC BY 4.0）<br>
           標高・地図：<a href="https://maps.gsi.go.jp/development/ichiran.html" target="_blank" rel="noopener">地理院タイル</a><br>
+          立体の建物（地図）：<a href="https://github.com/indigo-lab/plateau-tokyo23ku-building-mvt-2020" target="_blank" rel="noopener">indigo-lab PLATEAU MVT（2020年度）</a><br>
+          眺めの描画：<a href="https://deck.gl/" target="_blank" rel="noopener">deck.gl</a><br>
           高架の位置：<a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">© OpenStreetMap contributors</a><br>
           天体計算：<a href="https://github.com/cosinekitty/astronomy" target="_blank" rel="noopener">Astronomy Engine</a></p>
         <p id="data-info" class="muted small"></p>
@@ -73,8 +76,30 @@
     </div>
   </aside>
 
+  <div id="viewer" hidden>
+    <div id="viewer-sky"></div>
+    <div id="viewer-body"></div>
+    <div id="viewer-canvas"></div>
+    <div id="viewer-label">スカイツリー</div>
+    <header class="viewer-bar">
+      <div>
+        <strong id="viewer-title"></strong>
+        <span id="viewer-time"></span><span id="viewer-offset" class="muted"></span>
+        <div class="muted small"><span id="viewer-alt"></span>・<span id="viewer-status"></span></div>
+      </div>
+      <button id="viewer-close" class="icon-btn" aria-label="閉じる">×</button>
+    </header>
+    <footer class="viewer-controls">
+      <label>時刻 <input type="range" id="viewer-time-slider" min="-60" max="60" step="1" value="0"></label>
+      <label>焦点距離 <input type="range" id="viewer-focal" min="24" max="800" step="1" value="200"> <span id="viewer-focal-value"></span></label>
+      <button id="viewer-face" class="btn">スカイツリーを向く</button>
+      <p class="muted small">ドラッグで見回し、矢印キーで移動。目の高さ1.6m、35mm判の横位置で表示しています。</p>
+    </footer>
+  </div>
+
   <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/astronomy-engine@2.1.19/astronomy.browser.min.js"></script>
+  <script src="viewer.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
