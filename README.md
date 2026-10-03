@@ -14,7 +14,7 @@ Project PLATEAU の3D都市モデルを使い、ランドマーク（富士山�
 
 ## 構成
 
-- `index.html` / `app.js` / `style.css`：Webアプリ（静的ファイル。MapLibre GL JS + Astronomy Engine）
+- `index.html` / `app.js` / `style.css`：Webアプリ（静的ファイル）
 - `tiles/` / `data/`：可視判定の結果（地図タイルとメタデータ）
 - [pipeline/](pipeline/)：PLATEAUと標高データから可視判定タイルを作る処理（使い方は [pipeline/README.md](pipeline/README.md)。出力先は `web/` なので、生成後にリポジトリ直下へコピーする）
 - [docs/](docs/)：企画・調査・作業ログ
@@ -30,3 +30,4 @@ Project PLATEAU の3D都市モデルを使い、ランドマーク（富士山�
 
 - [Project PLATEAU](https://www.mlit.go.jp/plateau/)（国土交通省、CC BY 4.0）
 - [地理院タイル](https://maps.gsi.go.jp/development/ichiran.html)（標高・背景地図）
+- [OpenStreetMap](https://www.openstreetmap.org/copyright)（高速道路・鉄道の高架の位置、ODbL）

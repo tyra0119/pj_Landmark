@@ -11,6 +11,8 @@ const MERGE_GAP = 3;          // hidden samples tolerated inside one spot
 const SCAN_DAYS = 365;
 const BUILDING = -1;
 const OUTSIDE = -2;
+const WATER = -3;
+const VIADUCT = -4;
 
 const WARDS = {
   13101: '千代田区', 13102: '中央区', 13103: '港区', 13104: '新宿区', 13105: '文京区', 13106: '台東区',
@@ -21,7 +23,7 @@ const WARDS = {
 const BODY_LABEL = { Moon: '月', Sun: '太陽' };
 
 const state = { body: 'Moon', mode: 'center', date: null, meta: null, run: 0, pointRun: 0 };
-let map, LM, zTop, obsLM, palette;
+let map, LM, zTop, obsLM, palette, deckKeys;
 let timeMarkers = [];
 let pointMarker = null;
 
@@ -120,8 +122,11 @@ async function classAt(lat, lon) {
   const p = await samplePixel((z, x, y) => state.meta.tiles.replace('{z}', z).replace('{x}', x).replace('{y}', y),
     lat, lon, state.meta.data_zoom);
   if (!p) return OUTSIDE;
+  // classes that are never drawn are told apart by their alpha value
   if (p[3] === 0) return distBearing(lat, lon, LM.lat, LM.lon)[0] > state.meta.radius_m ? OUTSIDE : BUILDING;
-  if (p[3] < 255) return 0;  // "tip hidden" is the only translucent class
+  if (p[3] === 1) return WATER;
+  if (p[3] === 2) return VIADUCT;
+  if (p[3] < 255) return 0;  // "tip hidden" is the only visible translucent class
   const idx = palette.get(`${p[0]},${p[1]},${p[2]}`);
   return idx === undefined ? OUTSIDE : idx;
 }
@@ -132,6 +137,13 @@ function decodeDem(p) {
   return (v < 8388608 ? v : v - 16777216) * 0.01;
 }
 async function elevationAt(lat, lon) {
+  // on a walkable bridge you stand on the deck, not on the river
+  const z16 = state.meta.data_zoom;
+  const [x, y] = worldPx(lat, lon, z16);
+  if (deckKeys.has(`${Math.floor(x / 256)}/${Math.floor(y / 256)}`)) {
+    const p = await samplePixel((z, tx, ty) => state.meta.deck_tiles.replace('{z}', z).replace('{x}', tx).replace('{y}', ty), lat, lon, z16);
+    if (p && p[3] === 255) return decodeDem(p);
+  }
   const gsi = (layer) => (z, x, y) => `https://cyberjapandata.gsi.go.jp/xyz/${layer}/${z}/${x}/${y}.png`;
   const h = decodeDem(await samplePixel(gsi('dem5a_png'), lat, lon, 15)) ??
     decodeDem(await samplePixel(gsi('dem10b_png'), lat, lon, 14));
@@ -231,7 +243,7 @@ function pathGeoJSON(passes) {
   for (const pass of passes) {
     let seg = null;
     pass.samples.forEach((s) => {
-      const vis = s.cls >= 1 ? 'visible' : s.cls === 0 ? 'hidden' : s.cls === BUILDING ? 'building' : 'outside';
+      const vis = s.cls >= 1 ? 'visible' : s.cls === 0 ? 'hidden' : 'blocked';
       if (!seg || seg.properties.vis !== vis) {
         if (seg) seg.geometry.coordinates.push([s.lon, s.lat]);
         seg = { type: 'Feature', properties: { vis }, geometry: { type: 'LineString', coordinates: [[s.lon, s.lat]] } };
@@ -373,6 +385,8 @@ async function inspectPoint(lat, lon) {
   let status;
   if (cls === OUTSIDE) status = `<span class="badge ng">対象範囲外</span> 半径${state.meta.radius_m / 1000}km以内で選んでください`;
   else if (cls === BUILDING) status = '<span class="badge ng">建物の中</span> 道路や広場を選んでください';
+  else if (cls === WATER) status = '<span class="badge ng">水の上</span> 岸や橋の上を選んでください';
+  else if (cls === VIADUCT) status = '<span class="badge ng">高架</span> 高速道路・鉄道の高架とその下は対象外です';
   else status = cls >= 1 ? `<span class="badge ok">先端が見える</span> ${visibleText(cls)}` : '<span class="badge ng">見えない</span> 建物に遮られます';
 
   const head = `<p style="margin:0 0 6px">${place || ''}</p><p style="margin:0 0 8px">${status}</p>
@@ -480,6 +494,11 @@ function syncControls() {
   document.querySelectorAll('#full-moons button').forEach((b) => b.classList.toggle('active', b.dataset.ymd === state.date));
   document.getElementById('full-moons').hidden = state.body !== 'Moon';
   document.getElementById('date').value = state.date;
+  const label = BODY_LABEL[state.body];
+  document.getElementById('mode-help-text').textContent = state.mode === 'perch'
+    ? `${label}の下の縁が先端にちょうど触れる位置。${label}が先端の上に乗って見えます。`
+    : `${label}の真ん中に先端が来る位置。先端が${label}に刺さって見えます。`;
+  document.querySelectorAll('.mode-help svg').forEach((svg, i) => svg.classList.toggle('on', (i === 1) === (state.mode === 'perch')));
   document.getElementById('title-body').textContent = BODY_LABEL[state.body];
   document.title = `スカイツリー × ${BODY_LABEL[state.body]}`;
 }
@@ -565,6 +584,7 @@ async function main() {
   const m = state.meta;
   LM = { ...m.landmark, base: m.base_z };
   zTop = m.base_z + m.landmark.height;
+  deckKeys = new Set(m.deck_tile_keys || []);
   obsLM = new Astronomy.Observer(LM.lat, LM.lon, 0);
   palette = new Map(m.palette.map((c, i) => [`${parseInt(c.slice(1, 3), 16)},${parseInt(c.slice(3, 5), 16)},${parseInt(c.slice(5, 7), 16)}`, i]));
   document.getElementById('data-info').textContent = `PLATEAU建物 ${m.buildings.toLocaleString()}棟・半径${m.radius_m / 1000}km・${m.generated}作成`;

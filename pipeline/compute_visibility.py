@@ -1,14 +1,19 @@
 """Compute, for every ground cell, how much of the landmark is visible.
 
-1. Rasterise PLATEAU LOD1 building tops over the GSI ground grid (a DSM).
-2. Treat each height in LEVELS on the landmark as a viewpoint and sweep rays
-   outward; a ground observer (eye at EYE_HEIGHT) sees that height when the
-   line to it clears every obstacle in between (prefix maximum of slopes).
-3. Class per cell = number of LEVELS visible contiguously from the top:
+1. Build the obstacle surface: GSI ground + PLATEAU LOD1 building tops +
+   bridge decks (LOD2 OuterFloorSurface, plus a parapet).
+2. Build the standing surface: ground, or the deck on bridges people can walk
+   on. Water, buildings and expressway/railway decks are not standable; OSM
+   expressway/railway bridges decide which PLATEAU decks those are.
+3. Treat each height in LEVELS on the landmark as a viewpoint and sweep rays
+   outward; an observer (eye EYE_HEIGHT above the standing surface) sees that
+   height when the line to it clears every obstacle in between.
+4. Class per cell = number of LEVELS visible contiguously from the top:
    0 = tip hidden, 1 = only the tip, ..., len(LEVELS) = nearly the whole tower.
-   CLS_BUILDING / CLS_OUTSIDE mark cells inside buildings / beyond RADIUS_M.
+   CLS_* codes >= 252 mark cells where nobody can stand or outside RADIUS_M.
 
-Output: CACHE/classes.npy (uint8 grid) and CACHE/visibility_meta.json.
+Output: CACHE/classes.npy (uint8), CACHE/deck.npy (walkable deck height, NaN
+elsewhere) and CACHE/visibility_meta.json.
 
     python pipeline/compute_visibility.py
 """
@@ -22,9 +27,16 @@ from PIL import Image, ImageDraw
 from common import (CACHE, EARTH_R, EYE_HEIGHT, LANDMARK, LEVELS, RADIUS_M, REFRACTION_K,
                     ground_res, grid_spec, world_px)
 
+CLS_VIADUCT = 252   # expressway / railway deck, or the street under it
+CLS_WATER = 253
 CLS_BUILDING = 254
 CLS_OUTSIDE = 255
 RAY_BATCH = 512
+PARAPET = 1.2       # railing / noise barrier on top of a deck [m]
+WALKABLE = {1, 5, 7, 8, 99}   # road, sidewalk, footbridge, deck, unknown
+OSM_WIDTH = {"motorway": 14.0, "railway": 10.0}  # corridor width [m]
+# assumed deck height above ground where only OSM knows about a viaduct
+OSM_HEIGHT = {"motorway": 12.0, "railway": 8.0}
 
 
 def rasterise_buildings(g):
@@ -58,6 +70,96 @@ def rasterise_buildings(g):
     return np.asarray(img, dtype=np.float32), len(polys)
 
 
+def to_px(coords, g):
+    x, y = world_px(coords[:, 0], coords[:, 1])
+    return x - g["x0"], y - g["y0"]
+
+
+def rasterise_water(g):
+    img = Image.new("L", (g["w"], g["h"]), 0)
+    draw = ImageDraw.Draw(img)
+    for f in sorted((CACHE / "wtr").glob("*.npz")):
+        d = np.load(f)
+        if len(d["interior"]) == 0:
+            continue
+        x, y = to_px(d["coords"], g)
+        off = d["offsets"]
+        for i, interior in enumerate(d["interior"]):
+            a, b = off[i], off[i + 1]
+            if b - a >= 3:
+                draw.polygon(list(zip(x[a:b].tolist(), y[a:b].tolist())), fill=0 if interior else 1)
+    return np.asarray(img, dtype=bool)
+
+
+def rasterise_osm(g):
+    """Expressway / railway bridge corridors: mask and assumed deck height above ground."""
+    res = ground_res()
+    img = Image.new("F", (g["w"], g["h"]), 0)
+    draw = ImageDraw.Draw(img)
+    data = json.loads((CACHE / "osm_bridges.json").read_text(encoding="utf-8"))
+    for kind in ("railway", "motorway"):
+        for line in data[kind]:
+            x, y = to_px(np.array(line)[:, ::-1], g)  # OSM is (lon, lat)
+            draw.line(list(zip(x.tolist(), y.tolist())), fill=OSM_HEIGHT[kind], width=max(1, int(round(OSM_WIDTH[kind] / res))))
+    height = np.asarray(img, dtype=np.float32)
+    return height > 0, height
+
+
+def rasterise_bridges(g, osm):
+    """Return (obstacle top, walkable deck height or NaN, non-standable mask, stats)."""
+    top_img = Image.new("F", (g["w"], g["h"]), -1e4)
+    deck_img = Image.new("F", (g["w"], g["h"]), -1e4)
+    id_img = Image.new("I", (g["w"], g["h"]), 0)
+    top_draw, deck_draw, id_draw = ImageDraw.Draw(top_img), ImageDraw.Draw(deck_img), ImageDraw.Draw(id_img)
+    functions = [0]
+    decks = []
+    for f in sorted((CACHE / "brid").glob("*.npz")):
+        d = np.load(f)
+        base_id = len(functions)
+        functions += d["function"].tolist()
+        has_deck = np.zeros(len(d["function"]), dtype=bool)
+        if len(d["deck_z"]):
+            x, y = to_px(d["deck_coords"], g)
+            off = d["deck_offsets"]
+            for k in range(len(d["deck_z"])):
+                a, b = off[k], off[k + 1]
+                if b - a >= 3:
+                    owner = int(d["deck_owner"][k])
+                    decks.append((float(d["deck_z"][k]), base_id + owner, list(zip(x[a:b].tolist(), y[a:b].tolist()))))
+                    has_deck[owner] = True
+        # bridges without a deck model: the LOD1 prism is a plain obstacle nobody stands in
+        x, y = to_px(d["fp_coords"], g)
+        off = d["fp_offsets"]
+        for i in np.where(~has_deck)[0]:
+            a, b = off[i], off[i + 1]
+            if b - a >= 3:
+                pts = list(zip(x[a:b].tolist(), y[a:b].tolist()))
+                top_draw.polygon(pts, fill=float(d["top"][i]))
+                id_draw.polygon(pts, fill=-1)
+    for z, bid, pts in sorted(decks, key=lambda t: t[0]):
+        deck_draw.polygon(pts, fill=z)
+        top_draw.polygon(pts, fill=z + PARAPET)
+        id_draw.polygon(pts, fill=bid)
+    deck = np.asarray(deck_img, dtype=np.float32)
+    top = np.asarray(top_img, dtype=np.float32)
+    ids = np.asarray(id_img, dtype=np.int32)
+
+    # people can stand on a deck unless its type says otherwise or OSM maps an
+    # expressway / railway bridge over most of it
+    functions = np.array(functions)
+    on_deck = ids > 0
+    px_count = np.bincount(ids[on_deck], minlength=len(functions))
+    osm_count = np.bincount(ids[on_deck & osm], minlength=len(functions))
+    walk = np.isin(functions, list(WALKABLE)) & (osm_count <= 0.3 * np.maximum(px_count, 1))
+    walk[0] = False
+    walk_cell = on_deck & walk[np.where(on_deck, ids, 0)]
+    deck = np.where(walk_cell, deck, np.nan).astype(np.float32)
+    blocked = (ids != 0) & ~walk_cell
+    has = px_count > 0
+    stats = {"total": int(len(functions) - 1), "walkable": int((walk & has).sum()), "not_walkable": int((~walk & has).sum() - 1)}
+    return top, deck, blocked, stats
+
+
 def main():
     t0 = time.time()
     g = grid_spec()
@@ -67,7 +169,24 @@ def main():
     inside = btop > -1e3
     dsm = np.where(inside, np.maximum(btop, ground), ground).astype(np.float32)
     del btop
-    print(f"DSM ready {time.time() - t0:.0f}s", flush=True)
+    water = rasterise_water(g)
+    osm, osm_h = rasterise_osm(g)
+    brtop, deck, viaduct, bstats = rasterise_bridges(g, osm)
+    dsm = np.maximum(dsm, brtop)
+    # viaducts PLATEAU does not model (e.g. parts of the Shuto expressway)
+    osm_only = osm & ~(brtop > -1e3) & ~inside
+    dsm = np.where(osm_only, np.maximum(dsm, ground + osm_h + PARAPET), dsm)
+    viaduct |= osm_only
+    bstats["osm_only_px"] = int(osm_only.sum())
+    del brtop, osm, osm_h, osm_only
+    on_deck = ~np.isnan(deck)
+    stand = np.where(on_deck, deck, ground).astype(np.float32)
+    status = np.zeros(ground.shape, dtype=np.uint8)
+    status[viaduct] = CLS_VIADUCT
+    status[water & ~on_deck] = CLS_WATER
+    status[inside] = CLS_BUILDING
+    print(f"DSM ready {time.time() - t0:.0f}s  bridges {bstats}  water {water.mean():.1%}", flush=True)
+    del water
 
     cx, cy = g["cx"], g["cy"]
     ci, cj = int(round(cy)), int(round(cx))
@@ -80,7 +199,7 @@ def main():
     r_px = np.arange(1, n + 1, dtype=np.float32)
     r_m = r_px * res
     drop = (r_m ** 2) * (1 - REFRACTION_K) / (2 * EARTH_R)  # curvature minus refraction
-    flat_dsm, flat_ground, flat_in = dsm.ravel(), ground.ravel(), inside.ravel()
+    flat_dsm, flat_stand, flat_status = dsm.ravel(), stand.ravel(), status.ravel()
     ray_cls = np.zeros((k_rays, n), dtype=np.uint8)
 
     for k0 in range(0, k_rays, RAY_BATCH):
@@ -92,8 +211,8 @@ def main():
         np.clip(ys, 0, g["h"] - 1, out=ys)
         idx = ys * g["w"] + xs
         z = flat_dsm[idx] - drop
-        eye = flat_ground[idx] + EYE_HEIGHT - drop
-        blocked_cell = flat_in[idx]
+        eye = flat_stand[idx] + EYE_HEIGHT - drop
+        cell_status = flat_status[idx]
         cls = np.zeros(z.shape, dtype=np.uint8)
         running = np.ones(z.shape, dtype=bool)
         for vz in view_z:
@@ -102,7 +221,7 @@ def main():
             horizon = np.concatenate([np.full((len(th), 1), -np.inf, np.float32), horizon[:, :-1]], axis=1)
             running &= (eye - vz) / r_m >= horizon
             cls += running
-        cls[blocked_cell] = CLS_BUILDING
+        cls = np.where(cell_status > 0, cell_status, cls)
         ray_cls[k0:k1] = cls
         if (k0 // RAY_BATCH) % 10 == 0:
             print(f"rays {k1}/{k_rays} {time.time() - t0:.0f}s", flush=True)
@@ -118,8 +237,10 @@ def main():
         c = ray_cls[k, s]
         c[r > n] = CLS_OUTSIDE
         classes[row:row + len(yy)] = c
-    classes[inside & (classes != CLS_OUTSIDE)] = CLS_BUILDING
+    keep = (status > 0) & (classes != CLS_OUTSIDE)
+    classes[keep] = status[keep]
     np.save(CACHE / "classes.npy", classes)
+    np.save(CACHE / "deck.npy", deck)
 
     meta = {
         "landmark": LANDMARK,
@@ -129,6 +250,7 @@ def main():
         "eye_height": EYE_HEIGHT,
         "refraction_k": REFRACTION_K,
         "buildings": n_bldg,
+        "bridges": bstats,
         "files": len(list((CACHE / "bldg").glob("*.npz"))),
     }
     (CACHE / "visibility_meta.json").write_text(json.dumps(meta, ensure_ascii=False, indent=1), encoding="utf-8")
