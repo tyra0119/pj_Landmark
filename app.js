@@ -728,8 +728,15 @@ async function accessHTML(lat, lon, t) {
   }
   if (ports.length) {
     const night = stations.some((st) => Transit.trainVerdict(st, t)?.verdict !== 'ok');
+    // where each port is: direction and distance from the spot, a map marker, and a route to it
     html += `<div class="bikes"><div class="access-sub">シェアサイクル${night ? '（電車がない時間の足に）' : ''}</div>` +
-      ports.map((p) => `<div>${p.n ?? 'ポート'}（${p.d}m）${p.status ? `<span class="muted">いま貸出 ${p.status.bikes ?? '?'}台・返却 ${p.status.docks ?? '?'}台</span>` : ''}</div>`).join('') + '</div>';
+      ports.map((p, i) => {
+        const dir = compass(azimuthTo(lat, lon, p.lat, p.lon));
+        const route = `https://www.google.com/maps/dir/?api=1&destination=${p.lat.toFixed(6)},${p.lon.toFixed(6)}&travelmode=bicycling`;
+        return `<div class="port"><span class="bike-badge">${i + 1}</span><div><strong>${p.n ?? 'ポート'}</strong>
+          <div class="muted">${dir}へ${p.d}m${p.status ? `・いま貸出 ${p.status.bikes ?? '?'}台／返却 ${p.status.docks ?? '?'}台` : ''}</div>
+          <div class="port-actions"><button class="text-btn" data-port="${i}">地図で見る</button><a class="text-btn" href="${route}" target="_blank" rel="noopener">行き方</a></div></div></div>`;
+      }).join('') + '</div>';
   }
   return html + '</div>';
 }
@@ -738,7 +745,30 @@ async function fillAccess(el, lat, lon, t, popup) {
   el.innerHTML = '<p class="small muted">交通を調べています…</p>';
   fitPopup(popup);
   el.innerHTML = await accessHTML(lat, lon, t);
+  showPortMarkers(lat, lon, popup);
+  el.querySelectorAll('[data-port]').forEach((b) => b.addEventListener('click', () => {
+    const p = bikePorts[Number(b.dataset.port)];
+    if (p) map.flyTo({ center: [p.lon, p.lat], zoom: Math.max(map.getZoom(), 17) });
+  }));
   fitPopup(popup);
+}
+
+// numbered bicycle markers for the ports listed in the open popup
+let bikeMarkers = [];
+let bikePorts = [];
+async function showPortMarkers(lat, lon, popup) {
+  bikeMarkers.forEach((m) => m.remove());
+  bikeMarkers = [];
+  bikePorts = await Transit.portsNear(lat, lon, 500, 2);
+  bikeMarkers = bikePorts.map((p, i) => {
+    const el = document.createElement('div');
+    el.className = 'bike-marker';
+    el.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="6" cy="16" r="4"/><circle cx="18" cy="16" r="4"/><path d="M6 16l4-8h5l3 8M10 8l2 8h-2M14 6h3"/></svg><b>${i + 1}</b>`;
+    el.title = p.n ?? 'シェアサイクル';
+    return new maplibregl.Marker({ element: el }).setLngLat([p.lon, p.lat]).addTo(map);
+  });
+  // the markers belong to this popup and go with it
+  popup?.once('close', () => { if (bikePorts.length && popup === spotPopup) { bikeMarkers.forEach((m) => m.remove()); bikeMarkers = []; } });
 }
 
 // Keep a popup fully on screen. Its content grows after it opens (transit, the
