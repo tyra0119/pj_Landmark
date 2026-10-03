@@ -960,14 +960,9 @@ async function refresh() {
 async function inspectPoint(lat, lon) {
   const run = ++state.pointRun;
   state.point = { lat, lon };
-  const section = document.getElementById('point-section');
-  const info = document.getElementById('point-info');
-  section.hidden = false;
-  section.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-  info.innerHTML = '<p class="muted">調べています…</p>';
   if (pointMarker) pointMarker.remove();
   pointMarker = new maplibregl.Marker({ color: '#38bdf8' }).setLngLat([lon, lat]).addTo(map);
-  // the same answer also appears on the map, where the user tapped
+  // the answer appears on the map, where the user tapped
   spotPopup?.remove();
   const popup = spotPopup = new maplibregl.Popup({ maxWidth: '300px', offset: 32 })
     .setLngLat([lon, lat]).setHTML('<p class="muted" style="margin:0">調べています…</p>').addTo(map);
@@ -978,9 +973,11 @@ async function inspectPoint(lat, lon) {
     const el = popup.getElement();
     el.querySelector('[data-view]')?.addEventListener('click', () => openPointView(lat, lon, view.zO, view.d, view.time));
     fillAccess(el.querySelector('[data-access]'), lat, lon, view.time ?? Date.now(), popup);
-    el.querySelector('[data-detail]')?.addEventListener('click', () => {
-      document.getElementById('panel').classList.remove('collapsed');
-      document.getElementById('point-section').scrollIntoView({ block: 'start', behavior: 'smooth' });
+    el.querySelector('[data-detail]')?.addEventListener('click', (e) => {
+      // the full year, in place of the first three
+      el.querySelector('.events').innerHTML = view.items.join('');
+      e.currentTarget.remove();
+      fitPopup(popup);
     });
   };
   map.getSource('sight').setData({ type: 'Feature', geometry: { type: 'LineString', coordinates: [[lon, lat], [LM.lon, LM.lat]] } });
@@ -1002,11 +999,8 @@ async function inspectPoint(lat, lon) {
 
   const head = `<p style="margin:0 0 6px">${place || ''}</p><p style="margin:0 0 8px">${status}</p>
     <dl class="kv"><dt>距離</dt><dd>${(d / 1000).toFixed(2)}km・${compass(bearing)}</dd><dt>${tip()}の高さ</dt><dd>${tipAlt.toFixed(2)}°</dd></dl>`;
-  info.innerHTML = head + '<p class="muted small">1年分の重なりを計算中…</p>';
   showPopup(head + '<p class="muted small">1年分の重なりを計算中…</p>', {});
   if (cls < 0 || d < distRange()[0]) {
-    info.innerHTML = head;
-    if (cls >= 0) addViewButton(info, lat, lon, zO, d);
     showPopup(head + (cls >= 0 ? popupButtons(lat, lon) : ''), { zO, d });
     return;
   }
@@ -1042,19 +1036,14 @@ async function inspectPoint(lat, lon) {
     const wx = weatherText(await weatherFor(fmtYmd.format(date)), date);
     return `<li class="${dim ? 'day' : ''}">${fmtDay.format(date)} ${fmtTime.format(date)}　${sky.text}${phase}${wx ? `<br><span class="muted">${wx}</span>` : ''}</li>`;
   }));
-  info.innerHTML = head + (items.length
-    ? `<p class="small muted" style="margin:10px 0 0">これから1年で${BODY_LABEL[body]}が${tip()}に重なる日時（${items.length}回）</p><ul class="events">${items.join('')}</ul>`
-    : `<p class="small muted">これから1年、この地点では${BODY_LABEL[body]}が${tip()}に重なりません。</p>`);
   const hiddenNote = `<p class="small muted">※この地点は${LM.far ? '建物や山' : '建物'}で${tip()}が隠れるため、実際には見えません。</p>`;
-  if (cls === 0) info.insertAdjacentHTML('beforeend', hiddenNote);
-  addViewButton(info, lat, lon, zO, d, events[0]?.t);
 
-  // the map popup keeps it short: the next three, the rest in the panel
+  // the popup keeps it short: the next three, the rest on request
   const first = items.slice(0, 3);
   showPopup(head + (items.length
     ? `<p class="small muted" style="margin:8px 0 0">${BODY_LABEL[body]}が${tip()}に重なる日時（1年で${items.length}回）</p><ul class="events">${first.join('')}</ul>`
     : `<p class="small muted">これから1年、${BODY_LABEL[body]}は${tip()}に重なりません。</p>`) +
-    (cls === 0 ? hiddenNote : '') + popupButtons(lat, lon, events[0]?.t, items.length > 3), { zO, d, time: events[0]?.t });
+    (cls === 0 ? hiddenNote : '') + popupButtons(lat, lon, events[0]?.t, items.length > 3), { zO, d, time: events[0]?.t, items });
 }
 
 function popupButtons(lat, lon, time, more = false) {
@@ -1070,18 +1059,6 @@ function openPointView(lat, lon, zO, d, time) {
     focal: Math.round(Math.min(800, Math.max(24, 24 * 0.8 / (2 * Math.tan(tower / 2))))),
     title: time ? `${fmtDay.format(time)} の眺め` : '今の眺め',
   });
-}
-
-function addViewButton(info, lat, lon, zO, d, time) {
-  const acc = document.createElement('div');
-  info.append(acc);
-  fillAccess(acc, lat, lon, time ?? Date.now());
-  info.insertAdjacentHTML('beforeend', directionsLink(lat, lon));
-  const btn = document.createElement('button');
-  btn.className = 'btn';
-  btn.textContent = time ? 'この地点からの眺めを見る（重なる時刻）' : 'この地点からの眺めを見る（現在時刻）';
-  btn.addEventListener('click', () => openPointView(lat, lon, zO, d, time));
-  info.append(btn);
 }
 
 // ---------- recommended places with the whole tower in view ----------
@@ -1343,7 +1320,6 @@ async function loadLandmark(id) {
     map.addSource('heat', heatSource(m));
     map.addLayer(heatLayer(m), 'sight');
     updatePins();
-    document.getElementById('point-section').hidden = true;
     pointMarker?.remove();
     spotPopup?.remove();
     map.getSource('sight').setData({ type: 'FeatureCollection', features: [] });
