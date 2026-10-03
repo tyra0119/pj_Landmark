@@ -14,6 +14,7 @@ const OUTSIDE = -2;
 const WATER = -3;
 const VIADUCT = -4;
 const UNSTABLE = -5;
+const RESTRICTED = -6;  // closed to the public (Imperial Palace)
 const WHOLE = 7;
 const TOP_SPOTS = 5;   // spots listed per time window before "show more"
 const TOP_RECS = 10;       // class where the tower is visible down to its lowest level   // the standing height changes too fast here (edge of a bridge)
@@ -23,6 +24,14 @@ const WARDS = {
   13107: '墨田区', 13108: '江東区', 13109: '品川区', 13110: '目黒区', 13111: '大田区', 13112: '世田谷区',
   13113: '渋谷区', 13114: '中野区', 13115: '杉並区', 13116: '豊島区', 13117: '北区', 13118: '荒川区',
   13119: '板橋区', 13120: '練馬区', 13121: '足立区', 13122: '葛飾区', 13123: '江戸川区',
+  14101: '横浜市鶴見区', 14102: '横浜市神奈川区', 14103: '横浜市西区', 14104: '横浜市中区', 14105: '横浜市南区',
+  14106: '横浜市保土ケ谷区', 14107: '横浜市磯子区', 14108: '横浜市金沢区', 14109: '横浜市港北区', 14110: '横浜市戸塚区',
+  14111: '横浜市港南区', 14112: '横浜市旭区', 14113: '横浜市緑区', 14114: '横浜市瀬谷区', 14115: '横浜市栄区',
+  14116: '横浜市泉区', 14117: '横浜市青葉区', 14118: '横浜市都筑区',
+  14131: '川崎市川崎区', 14132: '川崎市幸区', 14133: '川崎市中原区', 14134: '川崎市高津区', 14135: '川崎市多摩区',
+  14136: '川崎市宮前区', 14137: '川崎市麻生区', 14382: '箱根町',
+  19202: '富士吉田市', 19424: '忍野村', 19425: '山中湖村', 19429: '鳴沢村', 19430: '富士河口湖町',
+  22207: '富士宮市', 22210: '富士市', 22215: '御殿場市', 22220: '裾野市', 22344: '小山町',
 };
 const BODY_LABEL = { Moon: '月', Sun: '太陽' };
 
@@ -32,7 +41,11 @@ const LANDMARK_PINS = {
   tokyotower: { short: '東京タワー', lat: 35.658581, lon: 139.745433 },
   fuji: { short: '富士山', lat: 35.360628, lon: 138.727363 },
 };
-const LANDMARK_IDS = Object.keys(LANDMARK_PINS);
+// Mt. Fuji is analysed separately for each area people watch it from
+const FUJI_AREAS = { fuji: '都心', 'fuji-yokohama': '横浜', 'fuji-tanuki': '田貫湖・朝霧高原', 'fuji-gotemba': '御殿場' };
+const LANDMARK_IDS = [...Object.keys(LANDMARK_PINS), ...Object.keys(FUJI_AREAS)];
+const baseLandmark = (id) => (id in FUJI_AREAS ? 'fuji' : id);
+const landmarkLabel = (id) => (id in FUJI_AREAS ? `富士山（${FUJI_AREAS[id]}から）` : LANDMARK_PINS[id].short);
 const state = { landmark: 'skytree', body: 'Moon', mode: 'center', date: null, meta: null, run: 0, pointRun: 0 };
 let map, LM, zTop, obsLM, palette, deckKeys;
 const landmarkPins = {};
@@ -229,6 +242,7 @@ async function classAt(lat, lon) {
   if (p[3] === 0) return inArea(lat, lon) ? BUILDING : OUTSIDE;
   if (p[3] === 1) return WATER;
   if (p[3] === 2) return VIADUCT;
+  if (p[3] === 3) return RESTRICTED;
   if (p[3] < 255) return 0;  // "tip hidden" is the only visible translucent class
   const idx = palette.get(`${p[0]},${p[1]},${p[2]}`);
   return idx === undefined ? OUTSIDE : idx;
@@ -319,6 +333,12 @@ async function computeDay(ymd, body, mode, run) {
     prevK = c.k;
     cur.points.push({ t: c.t, lat, lon, d, az: c.h.az, alt: c.h.alt, sd: c.h.sd, zO, target: c.target, bearing: c.bearing });
   });
+
+  // a time window whose line never enters the observer area (e.g. the sun on the
+  // far side of Mt. Fuji) is not a time window anyone here can use
+  for (let i = passes.length - 1; i >= 0; i--) {
+    if (!passes[i].points.some((p) => inArea(p.lat, p.lon))) passes.splice(i, 1);
+  }
 
   // 3) sample the ground-level line every SAMPLE_M metres, each with its own ground height
   for (const pass of passes) {
@@ -788,6 +808,7 @@ async function inspectPoint(lat, lon) {
   else if (cls === BUILDING) status = '<span class="badge ng">建物の中</span> 道路や広場を選んでください';
   else if (cls === WATER) status = '<span class="badge ng">水の上</span> 岸や橋の上を選んでください';
   else if (cls === VIADUCT) status = '<span class="badge ng">高架</span> 高速道路・鉄道の高架とその下は対象外です';
+  else if (cls === RESTRICTED) status = '<span class="badge ng">立ち入りできない場所</span> 皇居の中は観測地点として使えません';
   else status = cls >= 1 ? `<span class="badge ok">${tip()}が見える</span> ${visibleText(cls)}` : `<span class="badge ng">見えない</span> ${LM.far ? '建物や山に' : '建物に'}遮られます`;
 
   const head = `<p style="margin:0 0 6px">${place || ''}</p><p style="margin:0 0 8px">${status}</p>
@@ -937,10 +958,16 @@ function showTab(name) {
   document.querySelectorAll('[data-panel]').forEach((p) => { p.hidden = p.dataset.panel !== name; });
 }
 
+// "富士山" goes back to the area last used for it
+function pickArea(id) {
+  return id === 'fuji' ? (state.lastFujiArea ?? 'fuji') : id;
+}
+
 async function switchLandmark(id) {
   if (id === state.landmark || state.switching) return;
   state.switching = true;
-  const done = busy(`${LANDMARK_PINS[id].short}のデータを読み込んでいます…`);
+  if (id in FUJI_AREAS) state.lastFujiArea = id;
+  const done = busy(`${landmarkLabel(id)}のデータを読み込んでいます…`);
   document.getElementById('panel').classList.add('loading');
   try {
     state.landmark = id;
@@ -959,7 +986,8 @@ async function switchLandmark(id) {
 
 // ---------- UI ----------
 function setupControls() {
-  document.querySelectorAll('[data-landmark]').forEach((b) => b.addEventListener('click', () => switchLandmark(b.dataset.landmark)));
+  document.querySelectorAll('[data-landmark]').forEach((b) => b.addEventListener('click', () => switchLandmark(pickArea(b.dataset.landmark))));
+  document.querySelectorAll('[data-area]').forEach((b) => b.addEventListener('click', () => switchLandmark(b.dataset.area)));
   document.querySelectorAll('[data-tab]').forEach((t) => t.addEventListener('click', () => showTab(t.dataset.tab)));
   document.querySelectorAll('[data-body]').forEach((b) => b.addEventListener('click', () => {
     state.body = b.dataset.body;
@@ -1058,8 +1086,13 @@ function syncControls() {
   document.getElementById('title-body').textContent = BODY_LABEL[state.body];
   document.title = `${LM.short} × ${BODY_LABEL[state.body]}｜ランドマーク × 月/太陽 撮影スポット案内`;
   document.querySelectorAll('[data-landmark]').forEach((b) => {
-    b.classList.toggle('active', b.dataset.landmark === state.landmark);
-    b.setAttribute('aria-checked', b.dataset.landmark === state.landmark);
+    b.classList.toggle('active', b.dataset.landmark === baseLandmark(state.landmark));
+    b.setAttribute('aria-checked', b.dataset.landmark === baseLandmark(state.landmark));
+  });
+  document.getElementById('fuji-areas').hidden = baseLandmark(state.landmark) !== 'fuji';
+  document.querySelectorAll('[data-area]').forEach((b) => {
+    b.classList.toggle('active', b.dataset.area === state.landmark);
+    b.setAttribute('aria-checked', b.dataset.area === state.landmark);
   });
   document.getElementById('title-lm').textContent = LM.short;
   document.querySelectorAll('.lm-short').forEach((e) => { e.textContent = LM.short; });
@@ -1069,6 +1102,7 @@ function syncControls() {
 function readHash() {
   const p = new URLSearchParams(location.hash.slice(1));
   if (LANDMARK_IDS.includes(p.get('lm'))) state.landmark = p.get('lm');
+  if (state.landmark in FUJI_AREAS) state.lastFujiArea = state.landmark;
   if (p.get('body') in BODY_LABEL) state.body = p.get('body');
   if (['center', 'perch'].includes(p.get('mode'))) state.mode = p.get('mode');
   if (/^\d{4}-\d{2}-\d{2}$/.test(p.get('date') || '')) state.date = p.get('date');
@@ -1078,7 +1112,7 @@ function writeHash() {
 }
 
 function updatePins() {
-  for (const [id, m] of Object.entries(landmarkPins)) m.getElement().classList.toggle('active', id === state.landmark);
+  for (const [id, m] of Object.entries(landmarkPins)) m.getElement().classList.toggle('active', id === baseLandmark(state.landmark));
 }
 
 function heatSource(m) {
@@ -1192,7 +1226,7 @@ function setupMap() {
     el.className = 'landmark-pin';
     el.innerHTML = `<span class="dot"></span><span class="name">${p.short}</span>`;
     el.title = `${p.short}を選ぶ`;
-    el.addEventListener('click', (e) => { e.stopPropagation(); switchLandmark(id); });
+    el.addEventListener('click', (e) => { e.stopPropagation(); switchLandmark(pickArea(id)); });
     landmarkPins[id] = new maplibregl.Marker({ element: el, anchor: 'left', offset: [-8, 0] }).setLngLat([p.lon, p.lat]).addTo(map);
   }
   updatePins();

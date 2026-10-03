@@ -96,8 +96,8 @@
  },
  "files": 372,
  "generated": "2026-10-03",
- "tiles": "tiles/tokyotower/{z}/{x}/{y}.png?v=202610031348",
- "deck_tiles": "tiles/tokyotower-deck/{z}/{x}/{y}.png?v=202610031348",
+ "tiles": "tiles/tokyotower/{z}/{x}/{y}.png?v=202610031534",
+ "deck_tiles": "tiles/tokyotower-deck/{z}/{x}/{y}.png?v=202610031534",
  "deck_tile_keys": [
   "58201/25795",
   "58202/25795",

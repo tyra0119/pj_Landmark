@@ -59,11 +59,15 @@ def main():
         mosaic[(ty - ty0) * 256:(ty - ty0 + 1) * 256, (tx - tx0) * 256:(tx - tx0 + 1) * 256] = tile
         if i % 50 == 0:
             print(f"dem tiles {i}/{n}", flush=True)
-    mosaic = np.nan_to_num(mosaic, nan=0.0)  # open water / sea
-    up = mosaic.repeat(2, axis=0).repeat(2, axis=1)
+    # no elevation in any DEM layer = sea (or wide water); kept as a water mask
+    nodata = np.isnan(mosaic)
+    mosaic = np.nan_to_num(mosaic, nan=0.0)
     ox, oy = g["x0"] - tx0 * 512, g["y0"] - ty0 * 512
+    up = mosaic.repeat(2, axis=0).repeat(2, axis=1)
     ground = np.ascontiguousarray(up[oy:oy + g["h"], ox:ox + g["w"]])
     np.save(OUT / "ground.npy", ground)
+    sea = nodata.repeat(2, axis=0).repeat(2, axis=1)[oy:oy + g["h"], ox:ox + g["w"]]
+    np.save(OUT / "sea.npy", np.ascontiguousarray(sea))
     print("ground grid", ground.shape, "min", ground.min(), "max", ground.max())
 
 

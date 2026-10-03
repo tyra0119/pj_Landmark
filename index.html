@@ -24,6 +24,12 @@
           <button data-landmark="tokyotower" role="radio">東京タワー</button>
           <button data-landmark="fuji" role="radio">富士山</button>
         </div>
+        <div id="fuji-areas" class="segmented small" role="radiogroup" aria-label="富士山を見る場所" hidden>
+          <button data-area="fuji" role="radio">都心から</button>
+          <button data-area="fuji-yokohama" role="radio">横浜から</button>
+          <button data-area="fuji-tanuki" role="radio">田貫湖・朝霧</button>
+          <button data-area="fuji-gotemba" role="radio">御殿場から</button>
+        </div>
         <div class="segmented" role="radiogroup" aria-label="天体">
           <button data-body="Moon" class="active" role="radio" aria-checked="true">月</button>
           <button data-body="Sun" role="radio" aria-checked="false">太陽</button>
@@ -129,7 +135,7 @@
           <button id="locate" class="btn">現在地から探す</button>
         </section>
         <footer class="notes">
-          <p>橋の上は橋面の高さで計算し、川や池の上、高速道路・鉄道の高架とその下は候補から外しています。街路樹・電線・データ作成後の新しい建物は計算に入っていません。現地で確認してください。</p>
+          <p>橋の上は橋面の高さで計算し、川や池の上、高速道路・鉄道の高架とその下、皇居の中は候補から外しています。街路樹・電線・データ作成後の新しい建物は計算に入っていません。現地で確認してください。</p>
           <p>建物：<a href="https://www.mlit.go.jp/plateau/" target="_blank" rel="noopener">国土交通省 Project PLATEAU</a>（CC BY 4.0）<br>
             標高・地図：<a href="https://maps.gsi.go.jp/development/ichiran.html" target="_blank" rel="noopener">地理院タイル</a><br>
             立体の建物（地図）：<a href="https://github.com/indigo-lab/plateau-tokyo23ku-building-mvt-2020" target="_blank" rel="noopener">indigo-lab PLATEAU MVT（2020年度）</a><br>

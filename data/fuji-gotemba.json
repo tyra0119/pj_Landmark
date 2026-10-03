@@ -1,0 +1,107 @@
+{
+ "landmark": {
+  "id": "fuji-gotemba",
+  "name": "富士山",
+  "short": "富士山",
+  "tip": "山頂",
+  "far": true,
+  "lat": 35.360628,
+  "lon": 138.727363,
+  "height": 3776.0,
+  "base": 0.0,
+  "levels": [
+   3770.0,
+   3400.0,
+   3000.0,
+   2600.0,
+   2200.0,
+   1800.0,
+   1400.0
+  ],
+  "area": [
+   {
+    "lat": 35.3,
+    "lon": 138.94,
+    "r": 6000.0
+   }
+  ],
+  "area_label": "御殿場（富士山の東南東）",
+  "model": [],
+  "sides": 4,
+  "color": [
+   0,
+   0,
+   0
+  ],
+  "night_color": [
+   0,
+   0,
+   0
+  ]
+ },
+ "base_z": 0.0,
+ "levels": [
+  3770.0,
+  3400.0,
+  3000.0,
+  2600.0,
+  2200.0,
+  1800.0,
+  1400.0
+ ],
+ "radius_m": null,
+ "eye_height": 1.6,
+ "refraction_k": 0.13,
+ "buildings": 47087,
+ "bridges": {
+  "total": 0,
+  "walkable": 0,
+  "not_walkable": -1,
+  "osm_only_px": 97717
+ },
+ "files": 125,
+ "area": [
+  {
+   "lat": 35.3,
+   "lon": 138.94,
+   "r": 6000.0
+  }
+ ],
+ "area_center": {
+  "lat": 35.3,
+  "lon": 138.94
+ },
+ "area_label": "御殿場（富士山の東南東）",
+ "d_range": [
+  12701,
+  29183
+ ],
+ "generated": "2026-10-03",
+ "tiles": "tiles/fuji-gotemba/{z}/{x}/{y}.png?v=202610031547",
+ "deck_tiles": "tiles/fuji-gotemba-deck/{z}/{x}/{y}.png?v=202610031547",
+ "deck_tile_keys": [],
+ "data_zoom": 16,
+ "min_zoom": 12,
+ "bounds": [
+  138.8726806640625,
+  35.24561909420682,
+  139.010009765625,
+  35.35769620446751
+ ],
+ "palette": [
+  "#6b7280",
+  "#fef08a",
+  "#fde047",
+  "#facc15",
+  "#f59e0b",
+  "#f97316",
+  "#ea580c",
+  "#c2410c"
+ ],
+ "view_tiles": "tiles/bldg3d",
+ "plateau_years": [
+  "14382:2020",
+  "22215:2023",
+  "22344:2023"
+ ]
+}

@@ -1,0 +1,105 @@
+{
+ "landmark": {
+  "id": "fuji-tanuki",
+  "name": "富士山",
+  "short": "富士山",
+  "tip": "山頂",
+  "far": true,
+  "lat": 35.360628,
+  "lon": 138.727363,
+  "height": 3776.0,
+  "base": 0.0,
+  "levels": [
+   3770.0,
+   3400.0,
+   3000.0,
+   2600.0,
+   2200.0,
+   1800.0,
+   1400.0
+  ],
+  "area": [
+   {
+    "lat": 35.36,
+    "lon": 138.57,
+    "r": 7000.0
+   }
+  ],
+  "area_label": "田貫湖・朝霧高原（富士山の西）",
+  "model": [],
+  "sides": 4,
+  "color": [
+   0,
+   0,
+   0
+  ],
+  "night_color": [
+   0,
+   0,
+   0
+  ]
+ },
+ "base_z": 0.0,
+ "levels": [
+  3770.0,
+  3400.0,
+  3000.0,
+  2600.0,
+  2200.0,
+  1800.0,
+  1400.0
+ ],
+ "radius_m": null,
+ "eye_height": 1.6,
+ "refraction_k": 0.13,
+ "buildings": 8571,
+ "bridges": {
+  "total": 0,
+  "walkable": 0,
+  "not_walkable": -1,
+  "osm_only_px": 813
+ },
+ "files": 90,
+ "area": [
+  {
+   "lat": 35.36,
+   "lon": 138.57,
+   "r": 7000.0
+  }
+ ],
+ "area_center": {
+  "lat": 35.36,
+  "lon": 138.57
+ },
+ "area_label": "田貫湖・朝霧高原（富士山の西）",
+ "d_range": [
+  6753,
+  23412
+ ],
+ "generated": "2026-10-03",
+ "tiles": "tiles/fuji-tanuki/{z}/{x}/{y}.png?v=202610031546",
+ "deck_tiles": "tiles/fuji-tanuki-deck/{z}/{x}/{y}.png?v=202610031546",
+ "deck_tile_keys": [],
+ "data_zoom": 16,
+ "min_zoom": 12,
+ "bounds": [
+  138.4881591796875,
+  35.294952147406576,
+  138.6474609375,
+  35.42486791930557
+ ],
+ "palette": [
+  "#6b7280",
+  "#fef08a",
+  "#fde047",
+  "#facc15",
+  "#f59e0b",
+  "#f97316",
+  "#ea580c",
+  "#c2410c"
+ ],
+ "view_tiles": "tiles/bldg3d",
+ "plateau_years": [
+  "22207:2023"
+ ]
+}

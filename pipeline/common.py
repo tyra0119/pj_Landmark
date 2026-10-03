@@ -40,6 +40,18 @@ LANDMARKS = {
         "model": [], "sides": 4, "color": [0, 0, 0], "night_color": [0, 0, 0],
     },
 }
+# Mt. Fuji seen from near by: same mountain, other observer areas. Closer in,
+# much more of the mountain shows, so the levels reach further down.
+_FUJI_NEAR_LEVELS = [3770.0, 3400.0, 3000.0, 2600.0, 2200.0, 1800.0, 1400.0]
+LANDMARKS["fuji-tanuki"] = {**LANDMARKS["fuji"], "id": "fuji-tanuki", "levels": _FUJI_NEAR_LEVELS,
+                            "area": [{"lat": 35.36, "lon": 138.57, "r": 7000.0}],
+                            "area_label": "田貫湖・朝霧高原（富士山の西）"}
+LANDMARKS["fuji-yokohama"] = {**LANDMARKS["fuji"], "id": "fuji-yokohama",
+                              "area": [{"lat": 35.452, "lon": 139.638, "r": 6000.0}],
+                              "area_label": "横浜（みなとみらい・関内周辺）"}
+LANDMARKS["fuji-gotemba"] = {**LANDMARKS["fuji"], "id": "fuji-gotemba", "levels": _FUJI_NEAR_LEVELS,
+                             "area": [{"lat": 35.30, "lon": 138.94, "r": 6000.0}],
+                             "area_label": "御殿場（富士山の東南東）"}
 LANDMARK = LANDMARKS[os.environ.get("LANDMARK_ID", "skytree")]
 LEVELS = LANDMARK["levels"]
 # where observers can be: circles around the landmark, or a separate area for a far one

@@ -87,12 +87,12 @@ a { color: var(--accent); }
 .spots li.pass { list-style: none; border: 0; padding: 0; cursor: default; margin-top: 14px; background: none; }
 .spots li.pass:hover { background: none; }
 .spots li.pass > .spots { margin-top: 8px; }
-.pass-head { position: sticky; top: -4px; z-index: 1; display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; padding: 8px 12px; border-radius: 10px; background: #f8fafc; border: 1px solid var(--line); border-left: 4px solid #f59e0b; box-shadow: 0 2px 6px rgba(15, 23, 42, 0.08); }
-.pass-head strong { font-size: 14px; color: var(--hl); }
+.pass-head { position: sticky; top: -4px; z-index: 1; display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; padding: 10px 2px 8px; background: #fff; border-bottom: 1px solid #cbd5e1; }
+.pass-head strong { font-size: 15px; color: var(--text); }
 .pass-count { margin-left: auto; font-size: 12px; color: var(--muted); }
 .pass-sub { flex-basis: 100%; font-size: 12px; color: var(--muted); }
-.empty { border: 1px solid #fcd34d; background: var(--hl-soft); border-radius: 10px; padding: 12px 14px; color: var(--text); }
-.empty strong { display: block; font-size: 15px; color: var(--hl); margin-bottom: 6px; }
+.empty { border: 1px solid var(--line); background: #f8fafc; border-radius: 10px; padding: 12px 14px; color: var(--text); }
+.empty strong { display: block; font-size: 15px; color: var(--text); margin-bottom: 6px; }
 .empty p { margin: 6px 0 0; font-size: 13px; line-height: 1.6; color: #57534e; }
 .empty-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
 .empty-actions .btn { width: auto; margin: 0; padding: 6px 12px; font-size: 13px; }
@@ -117,8 +117,10 @@ a { color: var(--accent); }
 .badge.ok { background: #fef3c7; color: #92400e; }
 .badge.ng { background: var(--surface); color: #475569; }
 .events { list-style: none; padding: 0; margin: 8px 0 0; display: grid; gap: 6px; font-size: 13px; font-variant-numeric: tabular-nums; }
-.events li { border-left: 3px solid #f59e0b; padding-left: 8px; }
-.events li.day { border-left-color: #cbd5e1; color: var(--muted); }
+.events { gap: 0; }
+.events li { padding: 6px 0; border-bottom: 1px solid var(--line); }
+.events li:last-child { border-bottom: 0; }
+.events li.day { color: var(--muted); }
 
 .maplibregl-popup-content { background: #fff; color: var(--text); border-radius: 10px; padding: 12px 14px; box-shadow: 0 8px 30px rgba(15, 23, 42, 0.25); font-size: 13px; line-height: 1.5; }
 .maplibregl-popup-close-button { color: var(--muted); font-size: 18px; }

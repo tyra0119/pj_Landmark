@@ -12,19 +12,22 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 FETCH = [["fetch_plateau.py", "bldg", "brid", "wtr"], ["fetch_osm.py"], ["fetch_dem.py"]]
 BUILD = [["compute_visibility.py"], ["make_tiles.py"], ["make_recommend.py"], ["fetch_climate.py"]]
-FAR = {"fuji"}   # landmarks far outside the observer area use compute_far.py
+FAR = {"fuji", "fuji-yokohama", "fuji-tanuki", "fuji-gotemba"}   # landmarks outside the observer area use compute_far.py
 
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("landmark")
     ap.add_argument("--no-fetch", action="store_true")
+    ap.add_argument("--no-view", action="store_true", help="skip rebuilding the shared 3D view tiles")
     args = ap.parse_args()
     env = {**os.environ, "LANDMARK_ID": args.landmark, "PYTHONIOENCODING": "utf-8"}
     build = [["compute_far.py"] if s == ["compute_visibility.py"] and args.landmark in FAR else s for s in BUILD]
     for step in ([] if args.no_fetch else FETCH) + build:
         print(f"== {args.landmark}: {' '.join(step)}", flush=True)
         subprocess.run([sys.executable, str(HERE / step[0]), *step[1:]], cwd=HERE, env=env, check=True)
+    if args.no_view:
+        return
     print("== shared 3D view tiles", flush=True)
     subprocess.run([sys.executable, str(HERE / "make_view_tiles.py")], cwd=HERE, env=env, check=True)
 

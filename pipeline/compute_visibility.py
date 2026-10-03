@@ -20,6 +20,7 @@ height, NaN elsewhere) and visibility_meta.json.
 import json
 import math
 import time
+from pathlib import Path
 
 import numpy as np
 from PIL import Image, ImageDraw
@@ -27,6 +28,7 @@ from PIL import Image, ImageDraw
 from common import (EARTH_R, EXCLUDE_MIN_HEIGHT, EXCLUDE_RADIUS_M, EYE_HEIGHT, LANDMARK, LEVELS, OUT,
                     RADIUS_M, REFRACTION_K, ground_res, grid_spec, landmark_files, world_px)
 
+CLS_RESTRICTED = 251  # places the public cannot use (pipeline/data/restricted.geojson)
 CLS_VIADUCT = 252   # expressway / railway deck, or the street under it
 CLS_WATER = 253
 CLS_BUILDING = 254
@@ -80,6 +82,13 @@ def to_px(coords, g):
 def rasterise_water(g):
     img = Image.new("L", (g["w"], g["h"]), 0)
     draw = ImageDraw.Draw(img)
+    # OSM lakes and ponds first, PLATEAU water bodies (with islands cut out) on top
+    osm_path = OUT / "osm_bridges.json"
+    if osm_path.exists():
+        for ring in json.loads(osm_path.read_text(encoding="utf-8")).get("water", []):
+            if len(ring) >= 4 and ring[0] == ring[-1]:
+                x, y = to_px(np.array(ring)[:, ::-1], g)
+                draw.polygon(list(zip(x.tolist(), y.tolist())), fill=1)
     for f in landmark_files("wtr"):
         d = np.load(f)
         if len(d["interior"]) == 0:
@@ -90,6 +99,18 @@ def rasterise_water(g):
             a, b = off[i], off[i + 1]
             if b - a >= 3:
                 draw.polygon(list(zip(x[a:b].tolist(), y[a:b].tolist())), fill=0 if interior else 1)
+    return np.asarray(img, dtype=bool)
+
+
+def rasterise_restricted(g):
+    """Areas closed to the public, e.g. the Imperial Palace grounds."""
+    img = Image.new("L", (g["w"], g["h"]), 0)
+    draw = ImageDraw.Draw(img)
+    path = Path(__file__).resolve().parent / "data" / "restricted.geojson"
+    for f in json.loads(path.read_text(encoding="utf-8"))["features"]:
+        for ring in f["geometry"]["coordinates"]:
+            x, y = to_px(np.array(ring)[:, ::-1], g)
+            draw.polygon(list(zip(x.tolist(), y.tolist())), fill=1)
     return np.asarray(img, dtype=bool)
 
 
@@ -170,6 +191,8 @@ def build_surfaces(g, t0):
     dsm = np.where(inside, np.maximum(btop, ground), ground).astype(np.float32)
     del btop
     water = rasterise_water(g)
+    if (OUT / "sea.npy").exists():   # where the DEM has no ground: the sea
+        water |= np.load(OUT / "sea.npy")
     osm, osm_h = rasterise_osm(g)
     brtop, deck, viaduct, bstats = rasterise_bridges(g, osm)
     dsm = np.maximum(dsm, brtop)
@@ -182,6 +205,7 @@ def build_surfaces(g, t0):
     on_deck = ~np.isnan(deck)
     stand = np.where(on_deck, deck, ground).astype(np.float32)
     status = np.zeros(ground.shape, dtype=np.uint8)
+    status[rasterise_restricted(g)] = CLS_RESTRICTED
     status[viaduct] = CLS_VIADUCT
     status[water & ~on_deck] = CLS_WATER
     status[inside] = CLS_BUILDING
