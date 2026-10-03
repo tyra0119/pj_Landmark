@@ -30,6 +30,7 @@ let map, LM, zTop, obsLM, palette, deckKeys, landmarkPin;
 let timeMarkers = [];
 let pointMarker = null;
 let spotPopup = null;   // only one spot popup at a time
+let geolocate = null;
 
 // ---------- time formatting (always JST) ----------
 const fmtTime = new Intl.DateTimeFormat('ja-JP', { timeZone: 'Asia/Tokyo', hour: '2-digit', minute: '2-digit', second: '2-digit' });
@@ -125,6 +126,61 @@ function moonPhaseText(date) {
   const ill = Astronomy.Illumination('Moon', date).phase_fraction;
   const waxing = Astronomy.MoonPhase(date) < 180;
   return `輝面${Math.round(ill * 100)}%${ill > 0.98 ? '（満月）' : waxing ? '・満ちていく' : '・欠けていく'}`;
+}
+
+// ---------- weather: forecast when available, otherwise how often it is clear ----------
+const FORECAST_DAYS = 14;
+const weatherCache = new Map();
+const jstHour = (t) => Number(new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Tokyo', hour: '2-digit', hourCycle: 'h23' }).format(t));
+// points whose sky matters: where people stand, plus a distant landmark itself
+const weatherPoints = () => [state.meta.area_center ?? LM, ...(LM.far ? [LM] : [])];
+
+function weatherFor(ymd) {
+  const key = `${LM.id}/${ymd}`;
+  if (!weatherCache.has(key)) weatherCache.set(key, (async () => {
+    const days = (jstMidnight(ymd) - jstMidnight(fmtYmd.format(new Date()))) / 86400e3;
+    if (days >= 0 && days <= FORECAST_DAYS) {
+      try {
+        const pts = weatherPoints();
+        const url = 'https://api.open-meteo.com/v1/forecast?hourly=cloud_cover,cloud_cover_low&timezone=Asia%2FTokyo&models=jma_seamless' +
+          `&latitude=${pts.map((p) => p.lat.toFixed(3)).join(',')}&longitude=${pts.map((p) => p.lon.toFixed(3)).join(',')}` +
+          `&start_date=${ymd}&end_date=${ymd}`;
+        const j = await (await fetch(url)).json();
+        const sets = (Array.isArray(j) ? j : [j]).map((x) => x.hourly);
+        if (sets.every((h) => h?.cloud_cover)) {
+          // the worse of the points decides
+          const hours = sets[0].time.map((_, i) => ({
+            total: Math.max(...sets.map((h) => h.cloud_cover[i] ?? 0)),
+            low: Math.max(...sets.map((h) => h.cloud_cover_low[i] ?? 0)),
+          }));
+          return { kind: 'forecast', hours };
+        }
+      } catch { /* fall back to the climatology */ }
+    }
+    const climate = await (await fetch(`data/${LM.id}_climate.json`)).json().catch(() => null);
+    const month = Number(ymd.slice(5, 7));
+    return climate ? { kind: 'climate', month, clear: climate.clear[month - 1], years: climate.years } : null;
+  })());
+  return weatherCache.get(key);
+}
+
+function weatherText(w, t) {
+  if (!w) return '';
+  const h = jstHour(t);
+  if (w.kind === 'forecast') {
+    const { total, low } = w.hours[h] ?? {};
+    if (total === undefined) return '';
+    const icon = total <= 30 ? '☀' : total <= 70 ? '⛅' : '☁';
+    return `${icon} 雲量${Math.round(total)}%${low >= 50 ? '（低い雲が多い）' : ''}`;
+  }
+  return `晴れやすさ ${w.clear[h]}%`;
+}
+
+function weatherNote(w) {
+  if (!w) return '';
+  return w.kind === 'forecast'
+    ? '天気は予報（気象庁モデル）の雲量です。直前にも確認してください。'
+    : `天気予報は約2週間前から表示します。いまは過去10年（${w.years}）のこの月・時間帯に晴れていた割合を表示しています。`;
 }
 
 // ---------- raster lookups ----------
@@ -417,7 +473,8 @@ function visibleText(cls) {
   return lowest <= 50 ? 'ほぼ全体が見えます' : `上から約${state.meta.landmark.height - lowest}m以上が見えます`;
 }
 
-function renderSpots(passes) {
+async function renderSpots(passes) {
+  const weather = await weatherFor(state.date);
   const list = document.getElementById('spots');
   list.innerHTML = '';
   timeMarkers.forEach((m) => m.remove());
@@ -432,13 +489,16 @@ function renderSpots(passes) {
       ? `${label}は重なりますが、建物に遮られて地上から見える場所が見つかりませんでした。`
       : `${all.length}か所。線の明るい部分に立つと、その時刻に${label}が先端に重なります。` +
         (state.body === 'Sun' ? '太陽を直接見たり、減光フィルターなしで撮影したりしないでください。' : '');
+  document.getElementById('weather-note').textContent = weatherNote(weather);
 
   for (const pass of passes) {
     const sky = state.body === 'Moon' ? skyLabel(new Date(pass.points[0].t)).text : '';
     const head = document.createElement('li');
     head.className = 'pass-head';
     const dir = state.body === 'Moon' ? (pass.rising ? '昇る月（東〜南の空）' : '沈む月（南〜西の空）') : (pass.rising ? '午前の太陽（東〜南の空）' : '午後の太陽（南〜西の空）');
-    head.textContent = `${dir}　${fmtHM.format(pass.points[0].t)}〜${fmtHM.format(pass.points.at(-1).t)}${sky ? '・' + sky : ''}`;
+    const mid = (pass.points[0].t + pass.points.at(-1).t) / 2;
+    const wx = weatherText(weather, mid);
+    head.textContent = `${dir}　${fmtHM.format(pass.points[0].t)}〜${fmtHM.format(pass.points.at(-1).t)}${sky ? '・' + sky : ''}${wx ? '・' + wx : ''}`;
     list.append(head);
 
     for (const spot of pass.spots) {
@@ -449,7 +509,7 @@ function renderSpots(passes) {
       li.hidden = state.wholeOnly && spot.best < WHOLE;
       li.innerHTML = `<span class="spot-time">${fmtTime.format(spot.from)}</span><span class="spot-place">…</span>${spot.onDeck ? '<span class="deck-badge">橋の上</span>' : ''}${spot.best >= WHOLE ? '<span class="deck-badge whole">全体が見える</span>' : ''}
         <div class="spot-meta">${(spot.mid.d / 1000).toFixed(2)}km・${compass((spot.mid.az + 360) % 360)}向き・幅${Math.max(2, Math.round(spot.length))}m・${span}<br>
-        ${visibleText(spot.best)}・目安${Math.round(det.focal)}mm</div>`;
+        ${visibleText(spot.best)}・目安${Math.round(det.focal)}mm${weather ? '<br>' + weatherText(weather, spot.from) : ''}</div>`;
       li.addEventListener('click', () => focusSpot(spot, li));
       list.append(li);
       spot.li = li;
@@ -492,6 +552,7 @@ function spotPopupHTML(spot) {
       <dt>${label}の高さ</dt><dd>${s.alt.toFixed(1)}°</dd>
       ${extra}
       <dt>見え方</dt><dd>${visibleText(spot.best)}</dd>
+      <dt>天気</dt><dd>${spot.weather || '—'}</dd>
       <dt>塔の見かけ</dt><dd>${det.tower.toFixed(1)}°（${label}の${(det.tower / (2 * s.sd)).toFixed(0)}倍）</dd>
       <dt>焦点距離</dt><dd>約${Math.round(det.focal)}mm で塔が縦位置に収まる（35mm判）</dd>
     </dl>
@@ -506,11 +567,12 @@ function directionsLink(lat, lon, note = '') {
     (note ? `<p class="small muted" style="margin:4px 0 0">${note}</p>` : '');
 }
 
-function focusSpot(spot, li) {
+async function focusSpot(spot, li) {
   document.querySelectorAll('.spots li.active').forEach((e) => e.classList.remove('active'));
   li?.classList.add('active');
   map.flyTo({ center: [spot.mid.lon, spot.mid.lat], zoom: Math.max(map.getZoom(), 17) });
   spotPopup?.remove();
+  spot.weather = weatherText(await weatherFor(state.date), spot.from);
   const popup = spotPopup = new maplibregl.Popup({ maxWidth: '320px' }).setLngLat([spot.mid.lon, spot.mid.lat]).setHTML(spotPopupHTML(spot)).addTo(map);
   popup.getElement().querySelector('[data-view]').addEventListener('click', () => {
     const s = spot.mid;
@@ -591,13 +653,14 @@ async function inspectPoint(lat, lon) {
   }
   if (run !== state.pointRun) return;
 
-  const items = events.map((e) => {
+  const items = await Promise.all(events.map(async (e) => {
     const date = new Date(e.t);
     const sky = skyLabel(date, obs);
     const phase = body === 'Moon' ? `・${moonPhaseText(date)}` : '';
     const dim = body === 'Moon' && !sky.night;
-    return `<li class="${dim ? 'day' : ''}">${fmtDay.format(date)} ${fmtTime.format(date)}　${sky.text}${phase}</li>`;
-  });
+    const wx = weatherText(await weatherFor(fmtYmd.format(date)), date);
+    return `<li class="${dim ? 'day' : ''}">${fmtDay.format(date)} ${fmtTime.format(date)}　${sky.text}${phase}${wx ? `<br><span class="muted">${wx}</span>` : ''}</li>`;
+  }));
   info.innerHTML = head + (items.length
     ? `<p class="small muted" style="margin:10px 0 0">これから1年で${BODY_LABEL[body]}が先端に重なる日時（${items.length}回）</p><ul class="events">${items.join('')}</ul>`
     : `<p class="small muted">これから1年、この地点では${BODY_LABEL[body]}が先端に重なりません。</p>`);
@@ -711,6 +774,7 @@ function setupControls() {
     navigator.geolocation?.getCurrentPosition(
       (pos) => {
         const { latitude, longitude } = pos.coords;
+        geolocate?.trigger();   // show the "you are here" dot too
         map.flyTo({ center: [longitude, latitude], zoom: 16 });
         inspectPoint(latitude, longitude);
       },
@@ -879,6 +943,8 @@ function setupMap() {
   pad();
   desktop.addEventListener('change', pad);
   map.addControl(new maplibregl.NavigationControl({ visualizePitch: false }), 'top-right');
+  geolocate = new maplibregl.GeolocateControl({ positionOptions: { enableHighAccuracy: true }, trackUserLocation: true, showAccuracyCircle: true });
+  map.addControl(geolocate, 'top-right');
   map.addControl(new maplibregl.ScaleControl({ unit: 'metric' }), 'bottom-right');
   const pin = document.createElement('div');
   pin.className = 'landmark-pin';

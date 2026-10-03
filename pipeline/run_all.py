@@ -11,7 +11,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 FETCH = [["fetch_plateau.py", "bldg", "brid", "wtr"], ["fetch_osm.py"], ["fetch_dem.py"]]
-BUILD = [["compute_visibility.py"], ["make_tiles.py"], ["make_recommend.py"]]
+BUILD = [["compute_visibility.py"], ["make_tiles.py"], ["make_recommend.py"], ["fetch_climate.py"]]
 
 
 def main():
