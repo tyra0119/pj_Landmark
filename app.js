@@ -733,10 +733,39 @@ async function accessHTML(lat, lon, t) {
   }
   return html + '</div>';
 }
-async function fillAccess(el, lat, lon, t) {
+async function fillAccess(el, lat, lon, t, popup) {
   if (!el) return;
   el.innerHTML = '<p class="small muted">交通を調べています…</p>';
+  fitPopup(popup);
   el.innerHTML = await accessHTML(lat, lon, t);
+  fitPopup(popup);
+}
+
+// Keep a popup fully on screen. Its content grows after it opens (transit, the
+// yearly list), so the side it opens to is chosen again and the map is nudged
+// until the whole box is clear of the screen edges and the side panel.
+function fitPopup(popup) {
+  if (!popup?.isOpen()) return;
+  popup.setLngLat(popup.getLngLat());   // MapLibre picks the anchor again on update
+  requestAnimationFrame(() => {
+    if (!popup.isOpen() || map.isMoving()) return;
+    const box = popup.getElement().getBoundingClientRect();
+    const view = map.getContainer().getBoundingClientRect();
+    const margin = 12;
+    const panel = document.getElementById('panel').getBoundingClientRect();
+    const phone = window.matchMedia('(max-width: 720px)').matches;
+    const left = view.left + (phone ? 0 : panel.right) + margin;
+    const right = view.right - 56;                 // map buttons on the right
+    const top = view.top + margin;
+    const bottom = (phone ? panel.top : view.bottom) - margin;
+    let dx = 0, dy = 0;
+    if (box.width > right - left) dx = box.left - left;
+    else if (box.left < left) dx = box.left - left;
+    else if (box.right > right) dx = box.right - right;
+    if (box.height > bottom - top || box.top < top) dy = box.top - top;
+    else if (box.bottom > bottom) dy = box.bottom - bottom;
+    if (Math.abs(dx) > 1 || Math.abs(dy) > 1) map.panBy([dx, dy], { duration: 300 });
+  });
 }
 
 // Google Maps opens with the current location as the start (app on phones, web elsewhere)
@@ -759,7 +788,8 @@ async function focusSpot(spot, li) {
   spotPopup?.remove();
   spot.weather = weatherText(await weatherFor(state.date), spot.from);
   const popup = spotPopup = new maplibregl.Popup({ maxWidth: '320px' }).setLngLat([spot.mid.lon, spot.mid.lat]).setHTML(spotPopupHTML(spot)).addTo(map);
-  fillAccess(popup.getElement().querySelector('[data-access]'), spot.mid.lat, spot.mid.lon, spot.from);
+  map.once('moveend', () => fitPopup(popup));
+  fillAccess(popup.getElement().querySelector('[data-access]'), spot.mid.lat, spot.mid.lon, spot.from, popup);
   popup.getElement().querySelector('[data-view]').addEventListener('click', () => {
     const s = spot.mid;
     openViewer({
@@ -849,9 +879,10 @@ async function inspectPoint(lat, lon) {
   const showPopup = (html, view) => {
     if (run !== state.pointRun || !popup.isOpen()) return;
     popup.setHTML(html);
+    fitPopup(popup);
     const el = popup.getElement();
     el.querySelector('[data-view]')?.addEventListener('click', () => openPointView(lat, lon, view.zO, view.d, view.time));
-    fillAccess(el.querySelector('[data-access]'), lat, lon, view.time ?? Date.now());
+    fillAccess(el.querySelector('[data-access]'), lat, lon, view.time ?? Date.now(), popup);
     el.querySelector('[data-detail]')?.addEventListener('click', () => {
       document.getElementById('panel').classList.remove('collapsed');
       document.getElementById('point-section').scrollIntoView({ block: 'start', behavior: 'smooth' });
