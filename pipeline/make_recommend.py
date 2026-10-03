@@ -51,7 +51,7 @@ def main():
     # the whole tower first; where that is rare (dense high-rises), widen to "almost whole"
     picks = []
     top = len(LEVELS)
-    for cls in range(top, top - 3, -1):
+    for cls in range(top, 0, -1):
         if len(picks) >= ENOUGH:
             break
         pick_areas((classes >= cls) & (classes <= top) & ~near, res, picks, cls)

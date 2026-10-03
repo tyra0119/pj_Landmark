@@ -14,7 +14,9 @@ const OUTSIDE = -2;
 const WATER = -3;
 const VIADUCT = -4;
 const UNSTABLE = -5;
-const WHOLE = 7;       // class where the tower is visible down to its lowest level   // the standing height changes too fast here (edge of a bridge)
+const WHOLE = 7;
+const TOP_SPOTS = 5;   // spots listed per time window before "show more"
+const TOP_RECS = 10;       // class where the tower is visible down to its lowest level   // the standing height changes too fast here (edge of a bridge)
 
 const WARDS = {
   13101: '千代田区', 13102: '中央区', 13103: '港区', 13104: '新宿区', 13105: '文京区', 13106: '台東区',
@@ -24,9 +26,17 @@ const WARDS = {
 };
 const BODY_LABEL = { Moon: '月', Sun: '太陽' };
 
-const LANDMARK_IDS = ['skytree', 'tokyotower'];
+// landmarks you can pick (pins on the map; their data is loaded when chosen)
+const LANDMARK_PINS = {
+  skytree: { short: 'スカイツリー', lat: 35.710139, lon: 139.810833 },
+  tokyotower: { short: '東京タワー', lat: 35.658581, lon: 139.745433 },
+  fuji: { short: '富士山', lat: 35.360628, lon: 138.727363 },
+};
+const LANDMARK_IDS = Object.keys(LANDMARK_PINS);
 const state = { landmark: 'skytree', body: 'Moon', mode: 'center', date: null, meta: null, run: 0, pointRun: 0 };
-let map, LM, zTop, obsLM, palette, deckKeys, landmarkPin;
+let map, LM, zTop, obsLM, palette, deckKeys;
+const landmarkPins = {};
+let recMarkers = [];
 let timeMarkers = [];
 let pointMarker = null;
 let spotPopup = null;   // only one spot popup at a time
@@ -81,6 +91,7 @@ function placeObserver(az, d) {
 }
 // distances from the landmark where observers can be, and the area they cover
 const distRange = () => state.meta.d_range ?? [MIN_DIST, state.meta.radius_m];
+const tip = () => LM.tip ?? '先端';
 const areaLabel = () => state.meta.area_label ?? `半径${state.meta.radius_m / 1000}km以内`;
 function inArea(lat, lon) {
   const circles = state.meta.area ?? [{ lat: LM.lat, lon: LM.lon, r: state.meta.radius_m }];
@@ -467,8 +478,8 @@ function spotDetails(s) {
 }
 
 function visibleText(cls) {
-  if (cls < 1) return '先端は見えません';
-  if (cls === 1) return '先端付近だけ見えます';
+  if (cls < 1) return `${tip()}は見えません`;
+  if (cls === 1) return `${tip()}付近だけ見えます`;
   const lowest = state.meta.levels[cls - 1];
   return lowest <= 50 ? 'ほぼ全体が見えます' : `上から約${state.meta.landmark.height - lowest}m以上が見えます`;
 }
@@ -484,34 +495,49 @@ async function renderSpots(passes) {
   const whole = all.filter((s) => s.best >= WHOLE).length;
   document.getElementById('whole-count').textContent = `（${whole}か所）`;
   document.getElementById('summary').textContent = passes.length === 0
-    ? `この日は、${areaLabel()}で${label}が${LM.short}の${LM.tip ?? '先端'}に重なる時間がありません。`
+    ? `この日は、${areaLabel()}で${label}が${LM.short}の${tip()}に重なる時間がありません。`
     : all.length === 0
       ? `${label}は重なりますが、建物に遮られて地上から見える場所が見つかりませんでした。`
-      : `${all.length}か所。線の明るい部分に立つと、その時刻に${label}が先端に重なります。` +
+      : `${all.length}か所。線の明るい部分に立つと、その時刻に${label}が${tip()}に重なります。` +
         (state.body === 'Sun' ? '太陽を直接見たり、減光フィルターなしで撮影したりしないでください。' : '');
   document.getElementById('weather-note').textContent = weatherNote(weather);
 
   for (const pass of passes) {
+    // one group per time window: a clear heading, the best few spots, the rest on request
     const sky = state.body === 'Moon' ? skyLabel(new Date(pass.points[0].t)).text : '';
-    const head = document.createElement('li');
-    head.className = 'pass-head';
     const dir = state.body === 'Moon' ? (pass.rising ? '昇る月（東〜南の空）' : '沈む月（南〜西の空）') : (pass.rising ? '午前の太陽（東〜南の空）' : '午後の太陽（南〜西の空）');
     const mid = (pass.points[0].t + pass.points.at(-1).t) / 2;
     const wx = weatherText(weather, mid);
-    head.textContent = `${dir}　${fmtHM.format(pass.points[0].t)}〜${fmtHM.format(pass.points.at(-1).t)}${sky ? '・' + sky : ''}${wx ? '・' + wx : ''}`;
-    list.append(head);
+    const group = document.createElement('li');
+    group.className = 'pass';
+    group.innerHTML = `<div class="pass-head"><strong>${dir}</strong><span class="pass-count">${pass.spots.length}か所</span>
+      <div class="pass-sub">${fmtHM.format(pass.points[0].t)}〜${fmtHM.format(pass.points.at(-1).t)}${sky ? '・' + sky : ''}${wx ? '・' + wx : ''}</div></div>`;
+    const ol = document.createElement('ol');
+    ol.className = 'spots';
+    group.append(ol);
+    list.append(group);
+    const score = (s) => s.best * 1e6 + Math.min(s.length, 500) * 1e3 + (s.to - s.from) / 1000;
+    const ranked = [...pass.spots].sort((a, b) => score(b) - score(a));
+    pass.spots.forEach((s) => { s.top = ranked.indexOf(s) < TOP_SPOTS; s.pass = pass; });
+    pass.expanded = false;
+    if (pass.spots.length > TOP_SPOTS) {
+      const more = document.createElement('button');
+      more.className = 'more-btn';
+      more.addEventListener('click', () => { pass.expanded = !pass.expanded; applySpotFilter(); });
+      group.append(more);
+      pass.moreBtn = more;
+    }
 
     for (const spot of pass.spots) {
       const li = document.createElement('li');
       const det = spotDetails(spot.mid);
       const secs = Math.round((spot.to - spot.from) / 1000);
       const span = secs >= 1 ? `${secs}秒間` : '一瞬';
-      li.hidden = state.wholeOnly && spot.best < WHOLE;
       li.innerHTML = `<span class="spot-time">${fmtTime.format(spot.from)}</span><span class="spot-place">…</span>${spot.onDeck ? '<span class="deck-badge">橋の上</span>' : ''}${spot.best >= WHOLE ? '<span class="deck-badge whole">全体が見える</span>' : ''}
         <div class="spot-meta">${(spot.mid.d / 1000).toFixed(2)}km・${compass((spot.mid.az + 360) % 360)}向き・幅${Math.max(2, Math.round(spot.length))}m・${span}<br>
         ${visibleText(spot.best)}・目安${Math.round(det.focal)}mm${weather ? '<br>' + weatherText(weather, spot.from) : ''}</div>`;
       li.addEventListener('click', () => focusSpot(spot, li));
-      list.append(li);
+      ol.append(li);
       spot.li = li;
       placeName(spot.mid.lat, spot.mid.lon).then((n) => { li.querySelector('.spot-place').textContent = n || ''; });
     }
@@ -538,6 +564,22 @@ async function renderSpots(passes) {
     features: all.map((s, i) => ({ type: 'Feature', id: i, properties: { i }, geometry: { type: 'Point', coordinates: [s.mid.lon, s.mid.lat] } })),
   });
   state.spots = all;
+  state.passes = passes;
+  applySpotFilter();
+}
+
+// which spots the list shows: the best few per time window, everything when
+// expanded, or only whole-tower spots when that filter is on
+function applySpotFilter() {
+  for (const pass of state.passes || []) {
+    for (const s of pass.spots) {
+      if (s.li) s.li.hidden = state.wholeOnly ? s.best < WHOLE : !(pass.expanded || s.top);
+    }
+    if (pass.moreBtn) {
+      pass.moreBtn.hidden = state.wholeOnly;
+      pass.moreBtn.textContent = pass.expanded ? `上位${TOP_SPOTS}件だけ表示` : `ほか${pass.spots.length - TOP_SPOTS}件を表示`;
+    }
+  }
 }
 
 function spotPopupHTML(spot) {
@@ -553,8 +595,8 @@ function spotPopupHTML(spot) {
       ${extra}
       <dt>見え方</dt><dd>${visibleText(spot.best)}</dd>
       <dt>天気</dt><dd>${spot.weather || '—'}</dd>
-      <dt>塔の見かけ</dt><dd>${det.tower.toFixed(1)}°（${label}の${(det.tower / (2 * s.sd)).toFixed(0)}倍）</dd>
-      <dt>焦点距離</dt><dd>約${Math.round(det.focal)}mm で塔が縦位置に収まる（35mm判）</dd>
+      <dt>${LM.far ? '山' : '塔'}の見かけ</dt><dd>${det.tower.toFixed(1)}°（${label}の${(det.tower / (2 * s.sd)).toFixed(0)}倍）</dd>
+      <dt>焦点距離</dt><dd>約${Math.round(det.focal)}mm で${LM.far ? '山' : '塔'}が縦位置に収まる（35mm判）</dd>
     </dl>
     <button class="popup-btn" data-view>この場所からの眺めを見る</button>
     ${directionsLink(s.lat, s.lon, `${fmtTime.format(spot.from).slice(0, 5)}までに到着`)}`;
@@ -571,6 +613,7 @@ async function focusSpot(spot, li) {
   document.querySelectorAll('.spots li.active').forEach((e) => e.classList.remove('active'));
   li?.classList.add('active');
   map.flyTo({ center: [spot.mid.lon, spot.mid.lat], zoom: Math.max(map.getZoom(), 17) });
+  if (spot.li?.hidden && spot.pass) { spot.pass.expanded = true; applySpotFilter(); }
   spotPopup?.remove();
   spot.weather = weatherText(await weatherFor(state.date), spot.from);
   const popup = spotPopup = new maplibregl.Popup({ maxWidth: '320px' }).setLngLat([spot.mid.lon, spot.mid.lat]).setHTML(spotPopupHTML(spot)).addTo(map);
@@ -619,10 +662,10 @@ async function inspectPoint(lat, lon) {
   else if (cls === BUILDING) status = '<span class="badge ng">建物の中</span> 道路や広場を選んでください';
   else if (cls === WATER) status = '<span class="badge ng">水の上</span> 岸や橋の上を選んでください';
   else if (cls === VIADUCT) status = '<span class="badge ng">高架</span> 高速道路・鉄道の高架とその下は対象外です';
-  else status = cls >= 1 ? `<span class="badge ok">先端が見える</span> ${visibleText(cls)}` : '<span class="badge ng">見えない</span> 建物に遮られます';
+  else status = cls >= 1 ? `<span class="badge ok">${tip()}が見える</span> ${visibleText(cls)}` : `<span class="badge ng">見えない</span> ${LM.far ? '建物や山に' : '建物に'}遮られます`;
 
   const head = `<p style="margin:0 0 6px">${place || ''}</p><p style="margin:0 0 8px">${status}</p>
-    <dl class="kv"><dt>距離</dt><dd>${(d / 1000).toFixed(2)}km・${compass(bearing)}</dd><dt>先端の高さ</dt><dd>${tipAlt.toFixed(2)}°</dd></dl>`;
+    <dl class="kv"><dt>距離</dt><dd>${(d / 1000).toFixed(2)}km・${compass(bearing)}</dd><dt>${tip()}の高さ</dt><dd>${tipAlt.toFixed(2)}°</dd></dl>`;
   info.innerHTML = head + '<p class="muted small">1年分の重なりを計算中…</p>';
   if (cls < 0 || d < distRange()[0]) {
     info.innerHTML = head;
@@ -662,9 +705,9 @@ async function inspectPoint(lat, lon) {
     return `<li class="${dim ? 'day' : ''}">${fmtDay.format(date)} ${fmtTime.format(date)}　${sky.text}${phase}${wx ? `<br><span class="muted">${wx}</span>` : ''}</li>`;
   }));
   info.innerHTML = head + (items.length
-    ? `<p class="small muted" style="margin:10px 0 0">これから1年で${BODY_LABEL[body]}が先端に重なる日時（${items.length}回）</p><ul class="events">${items.join('')}</ul>`
-    : `<p class="small muted">これから1年、この地点では${BODY_LABEL[body]}が先端に重なりません。</p>`);
-  if (cls === 0) info.insertAdjacentHTML('beforeend', '<p class="small muted">※この地点は建物で先端が隠れるため、実際には見えません。</p>');
+    ? `<p class="small muted" style="margin:10px 0 0">これから1年で${BODY_LABEL[body]}が${tip()}に重なる日時（${items.length}回）</p><ul class="events">${items.join('')}</ul>`
+    : `<p class="small muted">これから1年、この地点では${BODY_LABEL[body]}が${tip()}に重なりません。</p>`);
+  if (cls === 0) info.insertAdjacentHTML('beforeend', `<p class="small muted">※この地点は${LM.far ? '建物や山' : '建物'}で${tip()}が隠れるため、実際には見えません。</p>`);
   addViewButton(info, lat, lon, zO, d, events[0]?.t);
 }
 
@@ -692,17 +735,38 @@ async function loadRecommendations() {
   try {
     recs = await (await fetch(`data/${state.meta.landmark.id}_recommend.json`)).json();
   } catch { /* no list for this landmark */ }
-  map.getSource('recs').setData({
-    type: 'FeatureCollection',
-    features: recs.map((r, i) => ({ type: 'Feature', properties: { i, rank: i + 1 }, geometry: { type: 'Point', coordinates: [r.lon, r.lat] } })),
+  recMarkers.forEach((m) => m.remove());
+  recMarkers = recs.map((r, i) => {
+    const el = document.createElement('button');
+    el.className = 'rec-marker';
+    el.textContent = i + 1;
+    el.title = `おすすめ ${i + 1}`;
+    el.hidden = !document.getElementById('rec-toggle').checked;
+    el.addEventListener('click', (e) => { e.stopPropagation(); selectRecommendation(i); });
+    return new maplibregl.Marker({ element: el }).setLngLat([r.lon, r.lat]).addTo(map);
   });
   state.recs = recs;
+  document.getElementById('recs-more')?.remove();
+  if (recs.length > TOP_RECS) {
+    const more = document.createElement('button');
+    more.id = 'recs-more';
+    more.className = 'more-btn';
+    more.textContent = `ほか${recs.length - TOP_RECS}件を表示`;
+    more.addEventListener('click', () => {
+      const open = more.dataset.open !== '1';
+      more.dataset.open = open ? '1' : '';
+      recs.forEach((r, i) => { r.li.hidden = !open && i >= TOP_RECS; });
+      more.textContent = open ? `上位${TOP_RECS}件だけ表示` : `ほか${recs.length - TOP_RECS}件を表示`;
+    });
+    list.after(more);
+  }
   recs.forEach((r, i) => {
     const li = document.createElement('li');
     const bearing = azimuthTo(r.lat, r.lon, LM.lat, LM.lon);
     li.innerHTML = `<span class="rank">${i + 1}</span><span class="spot-place">…</span>
       <div class="spot-meta">${(r.d / 1000).toFixed(1)}km・${LM.short}は${compass(bearing)}・開けた広さ 約${r.area.toLocaleString()}m²<br>${visibleText(r.cls ?? WHOLE)}</div>`;
     li.addEventListener('click', () => selectRecommendation(i));
+    li.hidden = i >= TOP_RECS;
     list.append(li);
     r.li = li;
     placeName(r.lat, r.lon).then((n) => { li.querySelector('.spot-place').textContent = n || '（地名なし）'; });
@@ -712,22 +776,37 @@ async function loadRecommendations() {
 function selectRecommendation(i) {
   const r = state.recs[i];
   document.querySelectorAll('#recs li.active').forEach((e) => e.classList.remove('active'));
+  r.li.hidden = false;
   r.li.classList.add('active');
+  r.li.scrollIntoView({ block: 'nearest' });
+  recMarkers.forEach((m, j) => m.getElement().classList.toggle('active', j === i));
   map.flyTo({ center: [r.lon, r.lat], zoom: Math.max(map.getZoom(), 16) });
   inspectPoint(r.lat, r.lon);
 }
 
+function showTab(name) {
+  document.querySelectorAll('[data-tab]').forEach((t) => {
+    t.classList.toggle('active', t.dataset.tab === name);
+    t.setAttribute('aria-selected', t.dataset.tab === name);
+  });
+  document.querySelectorAll('[data-panel]').forEach((p) => { p.hidden = p.dataset.panel !== name; });
+}
+
+async function switchLandmark(id) {
+  if (id === state.landmark) return;
+  state.landmark = id;
+  await loadLandmark(id);
+  syncControls();
+  const c = state.meta.area_center ?? LM;   // a far landmark: look at the area people stand in
+  map.flyTo({ center: [c.lon, c.lat], zoom: LM.far ? 11.5 : 12.6, pitch: map.getPitch() });
+  loadRecommendations();
+  refresh();
+}
+
 // ---------- UI ----------
 function setupControls() {
-  document.querySelectorAll('[data-landmark]').forEach((b) => b.addEventListener('click', async () => {
-    if (b.dataset.landmark === state.landmark) return;
-    state.landmark = b.dataset.landmark;
-    await loadLandmark(state.landmark);
-    syncControls();
-    map.flyTo({ center: [LM.lon, LM.lat], zoom: 12.6, pitch: map.getPitch() });
-    loadRecommendations();
-    refresh();
-  }));
+  document.querySelectorAll('[data-landmark]').forEach((b) => b.addEventListener('click', () => switchLandmark(b.dataset.landmark)));
+  document.querySelectorAll('[data-tab]').forEach((t) => t.addEventListener('click', () => showTab(t.dataset.tab)));
   document.querySelectorAll('[data-body]').forEach((b) => b.addEventListener('click', () => {
     state.body = b.dataset.body;
     syncControls();
@@ -746,10 +825,10 @@ function setupControls() {
   });
   document.getElementById('whole-only').addEventListener('change', (e) => {
     state.wholeOnly = e.target.checked;
-    (state.spots || []).forEach((s) => { if (s.li) s.li.hidden = state.wholeOnly && s.best < WHOLE; });
+    applySpotFilter();
   });
   document.getElementById('rec-toggle').addEventListener('change', (e) => {
-    map.setLayoutProperty('recs', 'visibility', e.target.checked ? 'visible' : 'none');
+    recMarkers.forEach((m) => { m.getElement().hidden = !e.target.checked; });
   });
   document.getElementById('heat-toggle').addEventListener('change', (e) => {
     map.setLayoutProperty('heat', 'visibility', e.target.checked ? 'visible' : 'none');
@@ -814,8 +893,8 @@ function syncControls() {
   document.getElementById('date').value = state.date;
   const label = BODY_LABEL[state.body];
   document.getElementById('mode-help-text').textContent = state.mode === 'perch'
-    ? `${label}の下の縁が先端にちょうど触れる位置。${label}が先端の上に乗って見えます。`
-    : `${label}の真ん中に先端が来る位置。先端が${label}に刺さって見えます。`;
+    ? `${label}の下の縁が${tip()}にちょうど触れる位置。${label}が${tip()}の上に乗って見えます。`
+    : `${label}の真ん中に${tip()}が来る位置。${tip()}が${label}に${LM.far ? '重なって' : '刺さって'}見えます。`;
   document.querySelectorAll('.mode-help svg').forEach((svg, i) => svg.classList.toggle('on', (i === 1) === (state.mode === 'perch')));
   document.getElementById('title-body').textContent = BODY_LABEL[state.body];
   document.title = `${LM.short} × ${BODY_LABEL[state.body]}｜ランドマーク × 月/太陽 撮影スポット案内`;
@@ -825,6 +904,7 @@ function syncControls() {
   });
   document.getElementById('title-lm').textContent = LM.short;
   document.querySelectorAll('.lm-short').forEach((e) => { e.textContent = LM.short; });
+  document.querySelectorAll('.lm-tip').forEach((e) => { e.textContent = tip(); });
 }
 
 function readHash() {
@@ -836,6 +916,10 @@ function readHash() {
 }
 function writeHash() {
   history.replaceState(null, '', `#lm=${state.landmark}&date=${state.date}&body=${state.body}&mode=${state.mode}`);
+}
+
+function updatePins() {
+  for (const [id, m] of Object.entries(landmarkPins)) m.getElement().classList.toggle('active', id === state.landmark);
 }
 
 function heatSource(m) {
@@ -873,8 +957,7 @@ async function loadLandmark(id) {
     map.removeSource('heat');
     map.addSource('heat', heatSource(m));
     map.addLayer(heatLayer(m), 'sight');
-    landmarkPin.setLngLat([LM.lon, LM.lat]);
-    landmarkPin.getElement().title = LM.name;
+    updatePins();
     document.getElementById('point-section').hidden = true;
     pointMarker?.remove();
     spotPopup?.remove();
@@ -887,7 +970,7 @@ function setupMap() {
   const m = state.meta;
   map = new maplibregl.Map({
     container: 'map',
-    center: [LM.lon, LM.lat],
+    center: [(m.area_center ?? LM).lon, (m.area_center ?? LM).lat],
     zoom: 12.6,
     maxZoom: 19,
     attributionControl: { compact: true },
@@ -902,7 +985,6 @@ function setupMap() {
         align: { type: 'geojson', data: { type: 'FeatureCollection', features: [] } },
         spots: { type: 'geojson', data: { type: 'FeatureCollection', features: [] } },
         sight: { type: 'geojson', data: { type: 'FeatureCollection', features: [] } },
-        recs: { type: 'geojson', data: { type: 'FeatureCollection', features: [] } },
         bldg: {
           type: 'vector', tiles: ['https://indigo-lab.github.io/plateau-tokyo23ku-building-mvt-2020/{z}/{x}/{y}.pbf'],
           minzoom: 10, maxzoom: 16,
@@ -927,10 +1009,6 @@ function setupMap() {
           },
         },
         {
-          id: 'recs', type: 'circle', source: 'recs',
-          paint: { 'circle-radius': ['interpolate', ['linear'], ['zoom'], 11, 5, 16, 11], 'circle-color': '#0f172a', 'circle-stroke-color': '#fde047', 'circle-stroke-width': 2.5 },
-        },
-        {
           id: 'spots', type: 'circle', source: 'spots',
           paint: { 'circle-radius': ['interpolate', ['linear'], ['zoom'], 12, 4, 17, 9], 'circle-color': '#fde68a', 'circle-stroke-color': '#0f172a', 'circle-stroke-width': 2 },
         },
@@ -946,19 +1024,23 @@ function setupMap() {
   geolocate = new maplibregl.GeolocateControl({ positionOptions: { enableHighAccuracy: true }, trackUserLocation: true, showAccuracyCircle: true });
   map.addControl(geolocate, 'top-right');
   map.addControl(new maplibregl.ScaleControl({ unit: 'metric' }), 'bottom-right');
-  const pin = document.createElement('div');
-  pin.className = 'landmark-pin';
-  landmarkPin = new maplibregl.Marker({ element: pin }).setLngLat([LM.lon, LM.lat]).addTo(map);
+  // every landmark has a pin; tapping one switches to it
+  for (const [id, p] of Object.entries(LANDMARK_PINS)) {
+    const el = document.createElement('button');
+    el.className = 'landmark-pin';
+    el.innerHTML = `<span class="dot"></span><span class="name">${p.short}</span>`;
+    el.title = `${p.short}を選ぶ`;
+    el.addEventListener('click', (e) => { e.stopPropagation(); switchLandmark(id); });
+    landmarkPins[id] = new maplibregl.Marker({ element: el, anchor: 'left', offset: [-8, 0] }).setLngLat([p.lon, p.lat]).addTo(map);
+  }
+  updatePins();
 
-  map.on('click', 'recs', (e) => selectRecommendation(e.features[0].properties.i));
-  map.on('mouseenter', 'recs', () => { map.getCanvas().style.cursor = 'pointer'; });
-  map.on('mouseleave', 'recs', () => { map.getCanvas().style.cursor = ''; });
   map.on('click', 'spots', (e) => {
     const spot = state.spots?.[e.features[0].properties.i];
     if (spot) { focusSpot(spot, spot.li); spot.li?.scrollIntoView({ block: 'nearest' }); }
   });
   map.on('click', (e) => {
-    if (map.queryRenderedFeatures(e.point, { layers: ['spots', 'recs'] }).length) return;
+    if (map.queryRenderedFeatures(e.point, { layers: ['spots'] }).length) return;
     inspectPoint(e.lngLat.lat, e.lngLat.lng);
   });
   map.on('mouseenter', 'spots', () => { map.getCanvas().style.cursor = 'pointer'; });

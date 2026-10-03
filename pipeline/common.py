@@ -28,9 +28,23 @@ LANDMARKS = {
                   [158, 210, 11], [210, 228, 9], [228, 270, 4], [270, 333, 1.8]],
         "sides": 4, "color": [236, 92, 40], "night_color": [255, 150, 70],
     },
+    # A distant landmark: observers are in central Tokyo (the areas analysed for
+    # the two towers, whose PLATEAU data is already cached), ~100 km away.
+    "fuji": {
+        "id": "fuji", "name": "富士山", "short": "富士山", "tip": "山頂", "far": True,
+        "lat": 35.360628, "lon": 138.727363, "height": 3776.0, "base": 0.0,
+        "levels": [3770.0, 3500.0, 3200.0, 2900.0, 2600.0, 2300.0, 2000.0],
+        "area": [{"lat": 35.710139, "lon": 139.810833, "r": 8000.0},
+                 {"lat": 35.658581, "lon": 139.745433, "r": 8000.0}],
+        "area_label": "都心部（スカイツリー・東京タワー周辺）",
+        "model": [], "sides": 4, "color": [0, 0, 0], "night_color": [0, 0, 0],
+    },
 }
 LANDMARK = LANDMARKS[os.environ.get("LANDMARK_ID", "skytree")]
 LEVELS = LANDMARK["levels"]
+# where observers can be: circles around the landmark, or a separate area for a far one
+AREA = LANDMARK.get("area") or [{"lat": LANDMARK["lat"], "lon": LANDMARK["lon"], "r": 8000.0}]
+AREA_CENTER = {"lat": sum(c["lat"] for c in AREA) / len(AREA), "lon": sum(c["lon"] for c in AREA) / len(AREA)}
 # buildings near the landmark taller than this are the landmark itself (or its parts)
 EXCLUDE_RADIUS_M = 60.0
 EXCLUDE_MIN_HEIGHT = 40.0
@@ -66,20 +80,37 @@ def px_to_latlon(x, y, zoom=GRID_ZOOM):
     return lat, lon
 
 
-def ground_res(lat=LANDMARK["lat"], zoom=GRID_ZOOM):
+def ground_res(lat=AREA_CENTER["lat"], zoom=GRID_ZOOM):
     """Metres per grid pixel at the given latitude."""
     return 2 * math.pi * 6378137.0 * math.cos(math.radians(lat)) / (256.0 * (1 << zoom))
 
 
 def grid_spec():
-    """Tile-aligned grid covering RADIUS_M around the landmark."""
+    """Tile-aligned grid covering the observer area; cx/cy is the landmark (maybe far outside)."""
+    xs, ys = [], []
+    for c in AREA:
+        x, y = world_px(c["lat"], c["lon"])
+        r_px = c["r"] / ground_res() + 8
+        xs += [float(x) - r_px, float(x) + r_px]
+        ys += [float(y) - r_px, float(y) + r_px]
+    x0 = int(math.floor(min(xs) / 256)) * 256
+    y0 = int(math.floor(min(ys) / 256)) * 256
+    x1 = int(math.ceil(max(xs) / 256)) * 256
+    y1 = int(math.ceil(max(ys) / 256)) * 256
     cx, cy = world_px(LANDMARK["lat"], LANDMARK["lon"])
-    r_px = RADIUS_M / ground_res() + 8
-    x0 = int(math.floor((float(cx) - r_px) / 256)) * 256
-    y0 = int(math.floor((float(cy) - r_px) / 256)) * 256
-    x1 = int(math.ceil((float(cx) + r_px) / 256)) * 256
-    y1 = int(math.ceil((float(cy) + r_px) / 256)) * 256
     return {"x0": x0, "y0": y0, "w": x1 - x0, "h": y1 - y0, "cx": float(cx) - x0, "cy": float(cy) - y0}
+
+
+def area_mask(g):
+    """Grid cells inside the observer area (any of the circles)."""
+    import numpy as np
+    res = ground_res()
+    yy, xx = np.ogrid[:g["h"], :g["w"]]
+    mask = np.zeros((g["h"], g["w"]), dtype=bool)
+    for c in AREA:
+        x, y = world_px(c["lat"], c["lon"])
+        mask |= np.hypot(xx - (float(x) - g["x0"]), yy - (float(y) - g["y0"])) * res <= c["r"]
+    return mask
 
 
 def landmark_files(kind):

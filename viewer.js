@@ -1,7 +1,8 @@
 'use strict';
 
 // First-person view from a ground spot: PLATEAU buildings and bridge decks
-// (the same data as the visibility analysis), Skytree, and the moon or sun.
+// (the same data as the visibility analysis), the landmark, distant mountains
+// (a skyline from the GSI DEM, e.g. Mt. Fuji) and the moon or sun.
 // deck.gl is loaded on first use so the map page stays light.
 (() => {
   const DECK_URL = 'https://unpkg.com/deck.gl@9.1.14/dist.min.js';
@@ -15,6 +16,13 @@
   let tileIndex = null;
   const tileCache = new Map();
   let ctx = null;            // current view: spot, time, body, viewState, fovy...
+  const SKY_SPAN = 30;       // skyline azimuths computed on each side of the landmark [deg]
+  const SKY_STEP = 0.04;     // [deg]
+  const SKY_NEAR = 2000;     // nearer terrain is flat city; buildings cover it
+  const SKY_FAR = 160000;
+  const DEM_Z = 12;
+  const demTiles = new Map();
+  const drop = (d) => d * d * (1 - 0.13) / (2 * 6371000);   // curvature minus refraction
 
   const $ = (id) => document.getElementById(id);
   const D2R = Math.PI / 180;
@@ -39,6 +47,19 @@
   function move(lat, lon, bearing, d) {
     const [a, b] = mPerDeg(lat);
     return [lat + d * Math.cos(bearing * D2R) / a, lon + d * Math.sin(bearing * D2R) / b];
+  }
+  // accurate far out: local plane at the midpoint plus the meridian convergence
+  function destination(lat, lon, az, d) {
+    let la = lat, lo = lon, conv = 0;
+    for (let i = 0; i < 3; i++) {
+      const mid = (lat + la) / 2;
+      const [a, b] = mPerDeg(mid);
+      const t = (az + conv / 2) * D2R;
+      la = lat + d * Math.cos(t) / a;
+      lo = lon + d * Math.sin(t) / b;
+      conv = (lo - lon) * Math.sin(mid * D2R);
+    }
+    return [la, lo];
   }
   function tileXY(lat, lon, z) {
     const n = 2 ** z;
@@ -91,6 +112,99 @@
         .catch(() => ({ buildings: [], decks: [] })));
     }
     return tileCache.get(key);
+  }
+
+  // ---------- distant terrain skyline (GSI DEM) ----------
+  function demTile(key) {
+    if (!demTiles.has(key)) {
+      const [x, y] = key.split('/');
+      demTiles.set(key, null);
+      fetch(`https://cyberjapandata.gsi.go.jp/xyz/dem_png/${DEM_Z}/${x}/${y}.png`)
+        .then((r) => (r.ok ? r.blob() : null))
+        .then((b) => (b ? createImageBitmap(b, { premultiplyAlpha: 'none', colorSpaceConversion: 'none' }) : null))
+        .then((bmp) => {
+          const h = new Float32Array(256 * 256);   // sea / missing tiles stay 0
+          if (bmp) {
+            const c = document.createElement('canvas');
+            c.width = c.height = 256;
+            const g = c.getContext('2d', { willReadFrequently: true });
+            g.drawImage(bmp, 0, 0);
+            const p = g.getImageData(0, 0, 256, 256).data;
+            for (let i = 0; i < h.length; i++) {
+              const v = p[i * 4] * 65536 + p[i * 4 + 1] * 256 + p[i * 4 + 2];
+              h[i] = v === 8388608 ? 0 : (v < 8388608 ? v : v - 16777216) * 0.01;
+            }
+          }
+          demTiles.set(key, h);
+          scheduleSkyline();
+        })
+        .catch(() => demTiles.set(key, new Float32Array(256 * 256)));
+    }
+    return demTiles.get(key);
+  }
+  function demAt(lat, lon) {
+    const n = 256 * 2 ** DEM_Z;
+    const s = Math.sin(lat * D2R);
+    const x = (lon + 180) / 360 * n, y = (0.5 - Math.log((1 + s) / (1 - s)) / (4 * Math.PI)) * n;
+    const tx = Math.floor(x / 256), ty = Math.floor(y / 256);
+    const t = demTile(`${tx}/${ty}`);
+    return t ? t[(Math.floor(y) - ty * 256) * 256 + (Math.floor(x) - tx * 256)] : undefined;
+  }
+  // highest apparent elevation of the terrain in each direction around the landmark
+  function computeSkyline() {
+    if (!ctx) return;
+    const az0 = ctx.towerBearing - SKY_SPAN;
+    const n = Math.round(2 * SKY_SPAN / SKY_STEP) + 1;
+    const alts = new Float32Array(n);
+    for (let i = 0; i < n; i++) {
+      const az = az0 + i * SKY_STEP;
+      let best = -1;
+      for (let d = SKY_NEAR; d < SKY_FAR; d += Math.max(60, d * 0.01)) {
+        const [la, lo] = destination(ctx.spot.lat, ctx.spot.lon, az, d);
+        const h = demAt(la, lo);
+        if (h === undefined) continue;   // tile still loading; redrawn when it arrives
+        const alt = Math.atan2(h - drop(d) - ctx.eye, d) / D2R;
+        if (alt > best) best = alt;
+      }
+      alts[i] = best;
+    }
+    ctx.skyline = { az0, alts };
+    placeOverlay();
+  }
+  let skylineTimer = null;
+  function scheduleSkyline() {
+    clearTimeout(skylineTimer);
+    skylineTimer = setTimeout(computeSkyline, 120);
+  }
+  function drawSkyline(vp) {
+    const cv = $('viewer-skyline');
+    const dpr = window.devicePixelRatio || 1;
+    if (cv.width !== Math.round(vp.width * dpr) || cv.height !== Math.round(vp.height * dpr)) {
+      cv.width = Math.round(vp.width * dpr);
+      cv.height = Math.round(vp.height * dpr);
+    }
+    const g = cv.getContext('2d');
+    g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    g.clearRect(0, 0, vp.width, vp.height);
+    const sl = ctx.skyline;
+    if (!sl) return;
+    const pts = [];
+    sl.alts.forEach((alt, i) => {
+      const az = sl.az0 + i * SKY_STEP;
+      if (Math.cos((az - ctx.viewState.bearing) * D2R) < 0.2) return;
+      const [la, lo] = move(ctx.spot.lat, ctx.spot.lon, az, MOON_DIST * Math.cos(alt * D2R));
+      const [x, y] = vp.project([lo, la, ctx.eye + MOON_DIST * Math.sin(alt * D2R)]);
+      pts.push([x, y]);
+    });
+    if (pts.length < 2) return;
+    const night = ctx.sunAlt < -4;
+    g.fillStyle = night ? '#121827' : ctx.sunAlt < 4 ? '#2a3550' : '#7b8aa3';
+    g.beginPath();
+    g.moveTo(pts[0][0], vp.height);
+    pts.forEach(([x, y]) => g.lineTo(x, y));
+    g.lineTo(pts.at(-1)[0], vp.height);
+    g.closePath();
+    g.fill();
   }
 
   // ---------- sky / bodies ----------
@@ -180,7 +294,9 @@
       width: `${2 * rpx}px`, height: `${2 * rpx}px`,
     });
     el.className = ctx.body === 'Sun' ? 'sun' : 'moon';
-    const tip = vp.project([lm.lon, lm.lat, lm.base + lm.height]);
+    const [tla, tlo] = move(ctx.spot.lat, ctx.spot.lon, ctx.towerBearing, MOON_DIST * Math.cos(ctx.tipAlt * D2R));
+    const tip = vp.project([tlo, tla, ctx.eye + MOON_DIST * Math.sin(ctx.tipAlt * D2R)]);
+    drawSkyline(vp);
     const lab = $('viewer-label');
     const towerAhead = Math.cos((ctx.towerBearing - vs.bearing) * D2R) > 0.3;
     Object.assign(lab.style, { display: towerAhead ? 'block' : 'none', left: `${tip[0]}px`, top: `${tip[1]}px` });
@@ -230,7 +346,8 @@
     ctx = {
       spot: { lat: opts.lat, lon: opts.lon }, ground: opts.ground, eye: opts.ground + 1.6, body: opts.body,
       baseTime: opts.time, towerBearing: towerAz,
-      tipAlt: Math.atan2(lm.base + lm.height - opts.ground - 1.6, dist) / D2R,
+      tipAlt: Math.atan2(lm.base + lm.height - opts.ground - 1.6 - drop(dist), dist) / D2R,
+      dist,
       data: { buildings: [], decks: [] },
     };
     ctx.viewState = { longitude: opts.lon, latitude: opts.lat, position: [0, 0, ctx.eye], bearing: ctx.towerBearing, pitch: 0, maxPitch: 60, minPitch: -89 };
@@ -239,6 +356,7 @@
     setFocal(opts.focal);
     setTime(0);
     faceTower();
+    computeSkyline();
 
     try {
       const deck = await loadDeck();
@@ -252,7 +370,8 @@
         });
       }
       deckgl.setProps({ viewState: ctx.viewState, views: new deck.FirstPersonView({ fovy: ctx.fovy, near: 0.3, far: FAR }) });
-      const keys = await neededTiles(ctx.spot, lm, dist, ctx.towerBearing);
+      // buildings far beyond a few km cannot hide anything that is not already hidden
+      const keys = await neededTiles(ctx.spot, lm, Math.min(dist, 10000), ctx.towerBearing);
       const tiles = await Promise.all(keys.map(loadTile));
       if (!ctx || root.hidden) return;
       ctx.data = { buildings: tiles.flatMap((t) => t.buildings), decks: tiles.flatMap((t) => t.decks) };

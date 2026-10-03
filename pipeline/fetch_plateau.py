@@ -20,7 +20,7 @@ from pathlib import Path
 import numpy as np
 from lxml import etree
 
-from common import CACHE, LANDMARK, OUT, RADIUS_M, bbox_lonlat
+from common import AREA, CACHE, OUT, bbox_lonlat
 
 API = "https://api.plateau.reearth.io/datacatalog/citygml/r:{:.5f},{:.5f},{:.5f},{:.5f}"
 GML = "{http://www.opengis.net/gml}"
@@ -46,8 +46,7 @@ def list_files(kind):
     for city in data["cities"]:
         for f in city["files"].get(kind, []):
             lat, lon, half_diag = mesh_center(f["code"])
-            dist = math.hypot((lat - LANDMARK["lat"]) * 111000, (lon - LANDMARK["lon"]) * 90500)
-            if dist < RADIUS_M + half_diag:
+            if any(math.hypot((lat - c["lat"]) * 111000, (lon - c["lon"]) * 90500) < c["r"] + half_diag for c in AREA):
                 files.append({"city": city["cityCode"], "year": city["year"], **f})
     return files
 

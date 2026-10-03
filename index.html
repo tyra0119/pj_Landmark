@@ -16,84 +16,100 @@
       <button id="sheet-toggle" class="sheet-handle" aria-label="メニューを開閉" aria-expanded="true"><span></span></button>
       <p class="app-name">ランドマーク × 月/太陽 撮影スポット案内</p>
       <h1><span id="title-lm"></span> × <span id="title-body">月</span><span class="sheet-state" aria-hidden="true"></span></h1>
-      <p class="lead">月や太陽が<span class="lm-short"></span>の先端に重なって見える、地上の場所と時刻を探します。</p>
+      <p class="lead">月や太陽が<span class="lm-short"></span>の<span class="lm-tip">先端</span>に重なって見える、地上の場所と時刻を探します。</p>
     </header>
 
+    <nav class="tabs" role="tablist">
+      <button role="tab" data-tab="spots" class="active" aria-selected="true">撮影スポット</button>
+      <button role="tab" data-tab="recs" aria-selected="false">おすすめ地点</button>
+      <button role="tab" data-tab="layers" aria-selected="false">表示設定</button>
+    </nav>
+
     <div class="panel-body">
-      <section class="controls">
-        <div class="segmented" role="radiogroup" aria-label="ランドマーク">
-          <button data-landmark="skytree" role="radio">スカイツリー</button>
-          <button data-landmark="tokyotower" role="radio">東京タワー</button>
-        </div>
-        <div class="segmented" role="radiogroup" aria-label="天体">
-          <button data-body="Moon" class="active" role="radio" aria-checked="true">月</button>
-          <button data-body="Sun" role="radio" aria-checked="false">太陽</button>
-        </div>
-
-        <label class="field">
-          <span>日付</span>
-          <input type="date" id="date">
-        </label>
-        <div id="full-moons" class="chips" aria-label="次の満月"></div>
-
-        <div class="segmented small" role="radiogroup" aria-label="重ね方">
-          <button data-mode="center" class="active" role="radio" aria-checked="true">先端を中心に</button>
-          <button data-mode="perch" role="radio" aria-checked="false">先端に乗せる</button>
-        </div>
-        <div class="mode-help">
-          <svg viewBox="0 0 40 48" aria-hidden="true"><circle cx="20" cy="12" r="9" class="m"/><path d="M20 12 L20 48" class="t"/></svg>
-          <p id="mode-help-text"></p>
-          <svg viewBox="0 0 40 48" aria-hidden="true"><circle cx="20" cy="9" r="8" class="m"/><path d="M20 17 L20 48" class="t"/></svg>
-        </div>
-      </section>
-
       <section id="point-section" hidden>
         <h2>選んだ地点</h2>
         <div id="point-info"></div>
       </section>
 
-      <section>
-        <h2>重なって見える場所</h2>
-        <p id="summary" class="muted">計算中…</p>
-        <p id="weather-note" class="muted small"></p>
-        <label class="toggle"><input type="checkbox" id="whole-only"> 全体が見える場所だけ<span id="whole-count" class="muted small"></span></label>
-        <ol id="spots" class="spots"></ol>
-      </section>
+      <div data-panel="spots">
+        <section class="controls">
+          <div class="segmented" role="radiogroup" aria-label="ランドマーク">
+            <button data-landmark="skytree" role="radio">スカイツリー</button>
+            <button data-landmark="tokyotower" role="radio">東京タワー</button>
+            <button data-landmark="fuji" role="radio">富士山</button>
+          </div>
+          <div class="segmented" role="radiogroup" aria-label="天体">
+            <button data-body="Moon" class="active" role="radio" aria-checked="true">月</button>
+            <button data-body="Sun" role="radio" aria-checked="false">太陽</button>
+          </div>
 
-      <section>
-        <h2>全体が見えるおすすめ地点</h2>
-        <p class="muted small">根元近くまで見える場所のうち、開けて広い順。タップすると、その場所で重なる日時を1年分探します。</p>
-        <label class="toggle"><input type="checkbox" id="rec-toggle" checked> 地図に表示</label>
-        <ol id="recs" class="spots recs"></ol>
-      </section>
+          <label class="field">
+            <span>日付</span>
+            <input type="date" id="date">
+          </label>
+          <div id="full-moons" class="chips" aria-label="次の満月"></div>
 
-      <section class="legend">
-        <h2><span class="lm-short"></span>の見え方</h2>
-        <label class="toggle"><input type="checkbox" id="heat-toggle" checked> 地図に表示</label>
-        <label class="toggle"><input type="checkbox" id="bldg-toggle"> 建物を立体表示</label>
-        <div class="legend-bar" id="legend-bar"></div>
-        <div class="legend-labels"><span>見えない</span><span>先端だけ</span><span>ほぼ全体</span></div>
-        <p class="muted small">地図をタップすると、その地点から重なる日時を1年分探します。</p>
-        <button id="locate" class="btn">現在地から探す</button>
-      </section>
+          <div class="segmented small" role="radiogroup" aria-label="重ね方">
+            <button data-mode="center" class="active" role="radio" aria-checked="true"><span class="lm-tip">先端</span>を中心に</button>
+            <button data-mode="perch" role="radio" aria-checked="false"><span class="lm-tip">先端</span>に乗せる</button>
+          </div>
+          <div class="mode-help">
+            <svg viewBox="0 0 40 48" aria-hidden="true"><circle cx="20" cy="12" r="9" class="m"/><path d="M20 12 L20 48" class="t"/></svg>
+            <p id="mode-help-text"></p>
+            <svg viewBox="0 0 40 48" aria-hidden="true"><circle cx="20" cy="9" r="8" class="m"/><path d="M20 17 L20 48" class="t"/></svg>
+          </div>
+        </section>
 
-      <footer class="notes">
-        <p>橋の上は橋面の高さで計算し、川や池の上、高速道路・鉄道の高架とその下は候補から外しています。街路樹・電線・データ作成後の新しい建物は計算に入っていません。現地で確認してください。</p>
-        <p>建物：<a href="https://www.mlit.go.jp/plateau/" target="_blank" rel="noopener">国土交通省 Project PLATEAU</a>（CC BY 4.0）<br>
-          標高・地図：<a href="https://maps.gsi.go.jp/development/ichiran.html" target="_blank" rel="noopener">地理院タイル</a><br>
-          立体の建物（地図）：<a href="https://github.com/indigo-lab/plateau-tokyo23ku-building-mvt-2020" target="_blank" rel="noopener">indigo-lab PLATEAU MVT（2020年度）</a><br>
-          眺めの描画：<a href="https://deck.gl/" target="_blank" rel="noopener">deck.gl</a><br>
-          高架の位置：<a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">© OpenStreetMap contributors</a><br>
-          天気：<a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a>（予報は気象庁モデル、過去の晴れやすさはERA5）<br>
-          天体計算：<a href="https://github.com/cosinekitty/astronomy" target="_blank" rel="noopener">Astronomy Engine</a></p>
-        <p id="data-info" class="muted small"></p>
-      </footer>
+        <section>
+          <h2>重なって見える場所</h2>
+          <p id="summary" class="muted">計算中…</p>
+          <p id="weather-note" class="muted small"></p>
+          <label class="toggle"><input type="checkbox" id="whole-only"> 全体が見える場所だけ<span id="whole-count" class="muted small"></span></label>
+          <ol id="spots" class="spots"></ol>
+        </section>
+      </div>
+
+      <div data-panel="recs" hidden>
+        <section>
+          <h2><span class="lm-short"></span>の全体が見えるおすすめ地点</h2>
+          <p class="muted small">根元近くまで見える場所のうち、開けて広い順。番号は地図上の印と同じです。タップすると、その場所で重なる日時を1年分探します。</p>
+          <ol id="recs" class="spots recs"></ol>
+        </section>
+      </div>
+
+      <div data-panel="layers" hidden>
+        <section class="legend">
+          <h2>地図に表示するもの</h2>
+          <label class="toggle"><input type="checkbox" id="heat-toggle" checked> <span class="lm-short"></span>の見え方（色分け）</label>
+          <div class="legend-bar" id="legend-bar"></div>
+          <div class="legend-labels"><span>見えない</span><span><span class="lm-tip">先端</span>だけ</span><span>ほぼ全体</span></div>
+          <label class="toggle"><input type="checkbox" id="rec-toggle" checked> おすすめ地点の番号</label>
+          <label class="toggle"><input type="checkbox" id="bldg-toggle"> 建物を立体表示（地図を傾けます）</label>
+        </section>
+        <section>
+          <h2>操作</h2>
+          <p class="muted small">地図をタップすると、その地点から重なる日時を1年分探します。地図上のランドマークの印をタップすると切り替わります。</p>
+          <button id="locate" class="btn">現在地から探す</button>
+        </section>
+        <footer class="notes">
+          <p>橋の上は橋面の高さで計算し、川や池の上、高速道路・鉄道の高架とその下は候補から外しています。街路樹・電線・データ作成後の新しい建物は計算に入っていません。現地で確認してください。</p>
+          <p>建物：<a href="https://www.mlit.go.jp/plateau/" target="_blank" rel="noopener">国土交通省 Project PLATEAU</a>（CC BY 4.0）<br>
+            標高・地図：<a href="https://maps.gsi.go.jp/development/ichiran.html" target="_blank" rel="noopener">地理院タイル</a><br>
+            立体の建物（地図）：<a href="https://github.com/indigo-lab/plateau-tokyo23ku-building-mvt-2020" target="_blank" rel="noopener">indigo-lab PLATEAU MVT（2020年度）</a><br>
+            眺めの描画：<a href="https://deck.gl/" target="_blank" rel="noopener">deck.gl</a><br>
+            高架の位置：<a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">© OpenStreetMap contributors</a><br>
+            天気：<a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a>（予報は気象庁モデル、過去の晴れやすさはERA5）<br>
+            天体計算：<a href="https://github.com/cosinekitty/astronomy" target="_blank" rel="noopener">Astronomy Engine</a></p>
+          <p id="data-info" class="muted small"></p>
+        </footer>
+      </div>
     </div>
   </aside>
 
   <div id="viewer" hidden>
     <div id="viewer-sky"></div>
     <div id="viewer-body"></div>
+    <canvas id="viewer-skyline"></canvas>
     <div id="viewer-canvas"></div>
     <div id="viewer-label"></div>
     <header class="viewer-bar">

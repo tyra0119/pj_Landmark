@@ -162,10 +162,8 @@ def rasterise_bridges(g, osm):
     return top, deck, blocked, stats
 
 
-def main():
-    t0 = time.time()
-    g = grid_spec()
-    res = ground_res()
+def build_surfaces(g, t0):
+    """Obstacle surface, standing surface, cell status and walkable deck heights."""
     ground = np.load(OUT / "ground.npy")
     btop, n_bldg = rasterise_buildings(g)
     inside = btop > -1e3
@@ -188,7 +186,14 @@ def main():
     status[water & ~on_deck] = CLS_WATER
     status[inside] = CLS_BUILDING
     print(f"DSM ready {time.time() - t0:.0f}s  bridges {bstats}  water {water.mean():.1%}", flush=True)
-    del water
+    return ground, dsm, stand, status, deck, n_bldg, bstats
+
+
+def main():
+    t0 = time.time()
+    g = grid_spec()
+    res = ground_res()
+    ground, dsm, stand, status, deck, n_bldg, bstats = build_surfaces(g, t0)
 
     cx, cy = g["cx"], g["cy"]
     ci, cj = int(round(cy)), int(round(cx))
