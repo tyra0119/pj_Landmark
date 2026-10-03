@@ -16,6 +16,7 @@ Project PLATEAU の3D都市モデルを使い、ランドマーク（富士山�
 
 - `index.html` / `app.js` / `style.css`：Webアプリ（静的ファイル。MapLibre GL JS + Astronomy Engine）
 - `tiles/` / `data/`：可視判定の結果（地図タイルとメタデータ）
+- [pipeline/](pipeline/)：PLATEAUと標高データから可視判定タイルを作る処理（使い方は [pipeline/README.md](pipeline/README.md)。出力先は `web/` なので、生成後にリポジトリ直下へコピーする）
 - [docs/](docs/)：企画・調査・作業ログ
 
 ## ドキュメント
