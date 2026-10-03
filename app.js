@@ -726,17 +726,22 @@ async function accessHTML(lat, lon, t) {
     }
     html += '</div>';
   }
-  if (ports.length) {
-    const night = stations.some((st) => Transit.trainVerdict(st, t)?.verdict !== 'ok');
-    // where each port is: direction and distance from the spot, a map marker, and a route to it
-    html += `<div class="bikes"><div class="access-sub">シェアサイクル${night ? '（電車がない時間の足に）' : ''}</div>` +
+  // Bike share only matters when the trains do not run: before the first train you
+  // ride in and return the bike near the spot; after the last you borrow one to go home.
+  const verdict = stations.length ? Transit.trainVerdict(stations[0], t)?.verdict : null;
+  if (ports.length && verdict && verdict !== 'ok') {
+    const comeByBike = verdict === 'before-first';
+    html += `<div class="bikes"><div class="access-sub">${comeByBike
+      ? 'シェアサイクル：始発前なので、自転車で来るならここに返せます'
+      : 'シェアサイクル：終電後なので、撮影のあとここで借りて帰れます'}</div>` +
       ports.map((p, i) => {
         const dir = compass(azimuthTo(lat, lon, p.lat, p.lon));
         const route = `https://www.google.com/maps/dir/?api=1&destination=${p.lat.toFixed(6)},${p.lon.toFixed(6)}&travelmode=bicycling`;
+        const count = p.status ? (comeByBike ? `・いま返却できる空き ${p.status.docks ?? '?'}台分` : `・いま借りられる ${p.status.bikes ?? '?'}台`) : '';
         return `<div class="port"><span class="bike-badge">${i + 1}</span><div><strong>${p.n ?? 'ポート'}</strong>
-          <div class="muted">${dir}へ${p.d}m${p.status ? `・いま貸出 ${p.status.bikes ?? '?'}台／返却 ${p.status.docks ?? '?'}台` : ''}</div>
-          <div class="port-actions"><button class="text-btn" data-port="${i}">地図で見る</button><a class="text-btn" href="${route}" target="_blank" rel="noopener">行き方</a></div></div></div>`;
-      }).join('') + '</div>';
+          <div class="muted">撮影地点から${dir}へ${p.d}m${count}</div>
+          <div class="port-actions"><button class="text-btn" data-port="${i}">地図で見る</button><a class="text-btn" href="${route}" target="_blank" rel="noopener">${comeByBike ? 'ここまでの自転車ルート' : '行き方'}</a></div></div></div>`;
+      }).join('') + '<p class="small muted" style="margin:4px 0 0">台数はいまの数です。当日は変わります。</p></div>';
   }
   return html + '</div>';
 }
@@ -745,7 +750,8 @@ async function fillAccess(el, lat, lon, t, popup) {
   el.innerHTML = '<p class="small muted">交通を調べています…</p>';
   fitPopup(popup);
   el.innerHTML = await accessHTML(lat, lon, t);
-  showPortMarkers(lat, lon, popup);
+  if (el.querySelector('.bikes')) showPortMarkers(lat, lon, popup);
+  else { bikeMarkers.forEach((m) => m.remove()); bikeMarkers = []; bikePorts = []; }
   el.querySelectorAll('[data-port]').forEach((b) => b.addEventListener('click', () => {
     const p = bikePorts[Number(b.dataset.port)];
     if (p) map.flyTo({ center: [p.lon, p.lat], zoom: Math.max(map.getZoom(), 17) });

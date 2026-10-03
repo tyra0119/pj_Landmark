@@ -162,8 +162,12 @@
   async function portsNear(lat, lon, maxM = 500, limit = 2) {
     const p = await loadPorts();
     if (!p) return [];
+    // the same port can be listed by two systems (docomo Tokyo and nationwide): keep one
+    const seen = new Set();
     const near = p.ports.map((x) => ({ ...x, d: Math.round(dist(lat, lon, x.lat, x.lon)) }))
-      .filter((x) => x.d <= maxM).sort((a, b) => a.d - b.d).slice(0, limit);
+      .filter((x) => x.d <= maxM).sort((a, b) => a.d - b.d)
+      .filter((x) => { const k = `${x.n}|${x.lat.toFixed(4)},${x.lon.toFixed(4)}`; return !seen.has(k) && seen.add(k); })
+      .slice(0, limit);
     const systems = [...new Set(near.map((x) => x.sys))];
     const maps = Object.fromEntries(await Promise.all(systems.map(async (s) => [s, await bikeStatus(s)])));
     return near.map((x) => ({ ...x, status: maps[x.sys]?.get(x.id) ?? null }));
