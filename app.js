@@ -649,6 +649,20 @@ async function inspectPoint(lat, lon) {
   info.innerHTML = '<p class="muted">調べています…</p>';
   if (pointMarker) pointMarker.remove();
   pointMarker = new maplibregl.Marker({ color: '#38bdf8' }).setLngLat([lon, lat]).addTo(map);
+  // the same answer also appears on the map, where the user tapped
+  spotPopup?.remove();
+  const popup = spotPopup = new maplibregl.Popup({ maxWidth: '300px', offset: 32 })
+    .setLngLat([lon, lat]).setHTML('<p class="muted" style="margin:0">調べています…</p>').addTo(map);
+  const showPopup = (html, view) => {
+    if (run !== state.pointRun || !popup.isOpen()) return;
+    popup.setHTML(html);
+    const el = popup.getElement();
+    el.querySelector('[data-view]')?.addEventListener('click', () => openPointView(lat, lon, view.zO, view.d, view.time));
+    el.querySelector('[data-detail]')?.addEventListener('click', () => {
+      document.getElementById('panel').classList.remove('collapsed');
+      document.getElementById('point-section').scrollIntoView({ block: 'start', behavior: 'smooth' });
+    });
+  };
   map.getSource('sight').setData({ type: 'Feature', geometry: { type: 'LineString', coordinates: [[lon, lat], [LM.lon, LM.lat]] } });
 
   const d = distBearing(lat, lon, LM.lat, LM.lon)[0];
@@ -667,9 +681,11 @@ async function inspectPoint(lat, lon) {
   const head = `<p style="margin:0 0 6px">${place || ''}</p><p style="margin:0 0 8px">${status}</p>
     <dl class="kv"><dt>距離</dt><dd>${(d / 1000).toFixed(2)}km・${compass(bearing)}</dd><dt>${tip()}の高さ</dt><dd>${tipAlt.toFixed(2)}°</dd></dl>`;
   info.innerHTML = head + '<p class="muted small">1年分の重なりを計算中…</p>';
+  showPopup(head + '<p class="muted small">1年分の重なりを計算中…</p>', {});
   if (cls < 0 || d < distRange()[0]) {
     info.innerHTML = head;
     if (cls >= 0) addViewButton(info, lat, lon, zO, d);
+    showPopup(head + (cls >= 0 ? popupButtons(lat, lon) : ''), { zO, d });
     return;
   }
 
@@ -707,8 +723,31 @@ async function inspectPoint(lat, lon) {
   info.innerHTML = head + (items.length
     ? `<p class="small muted" style="margin:10px 0 0">これから1年で${BODY_LABEL[body]}が${tip()}に重なる日時（${items.length}回）</p><ul class="events">${items.join('')}</ul>`
     : `<p class="small muted">これから1年、この地点では${BODY_LABEL[body]}が${tip()}に重なりません。</p>`);
-  if (cls === 0) info.insertAdjacentHTML('beforeend', `<p class="small muted">※この地点は${LM.far ? '建物や山' : '建物'}で${tip()}が隠れるため、実際には見えません。</p>`);
+  const hiddenNote = `<p class="small muted">※この地点は${LM.far ? '建物や山' : '建物'}で${tip()}が隠れるため、実際には見えません。</p>`;
+  if (cls === 0) info.insertAdjacentHTML('beforeend', hiddenNote);
   addViewButton(info, lat, lon, zO, d, events[0]?.t);
+
+  // the map popup keeps it short: the next three, the rest in the panel
+  const first = items.slice(0, 3);
+  showPopup(head + (items.length
+    ? `<p class="small muted" style="margin:8px 0 0">${BODY_LABEL[body]}が${tip()}に重なる日時（1年で${items.length}回）</p><ul class="events">${first.join('')}</ul>`
+    : `<p class="small muted">これから1年、${BODY_LABEL[body]}は${tip()}に重なりません。</p>`) +
+    (cls === 0 ? hiddenNote : '') + popupButtons(lat, lon, events[0]?.t, items.length > 3), { zO, d, time: events[0]?.t });
+}
+
+function popupButtons(lat, lon, time, more = false) {
+  return `<button class="popup-btn" data-view>${time ? '重なる時刻の眺めを見る' : '今の眺めを見る'}</button>
+    ${directionsLink(lat, lon)}
+    ${more ? '<button class="popup-btn" data-detail>すべての日時を見る</button>' : ''}`;
+}
+
+function openPointView(lat, lon, zO, d, time) {
+  const tower = Math.atan2(zTop - zO, d) - Math.atan2(LM.base - zO, d);
+  openViewer({
+    lat, lon, ground: zO - state.meta.eye_height, time: time ?? Date.now(), body: state.body,
+    focal: Math.round(Math.min(800, Math.max(24, 24 * 0.8 / (2 * Math.tan(tower / 2))))),
+    title: time ? `${fmtDay.format(time)} の眺め` : '今の眺め',
+  });
 }
 
 function addViewButton(info, lat, lon, zO, d, time) {
@@ -716,14 +755,7 @@ function addViewButton(info, lat, lon, zO, d, time) {
   const btn = document.createElement('button');
   btn.className = 'btn';
   btn.textContent = time ? 'この地点からの眺めを見る（重なる時刻）' : 'この地点からの眺めを見る（現在時刻）';
-  btn.addEventListener('click', () => {
-    const tower = Math.atan2(zTop - zO, d) - Math.atan2(LM.base - zO, d);
-    openViewer({
-      lat, lon, ground: zO - state.meta.eye_height, time: time ?? Date.now(), body: state.body,
-      focal: Math.round(Math.min(800, Math.max(24, 24 * 0.8 / (2 * Math.tan(tower / 2))))),
-      title: time ? `${fmtDay.format(time)} の眺め` : '今の眺め',
-    });
-  });
+  btn.addEventListener('click', () => openPointView(lat, lon, zO, d, time));
   info.append(btn);
 }
 
@@ -781,6 +813,7 @@ function selectRecommendation(i) {
   r.li.scrollIntoView({ block: 'nearest' });
   recMarkers.forEach((m, j) => m.getElement().classList.toggle('active', j === i));
   map.flyTo({ center: [r.lon, r.lat], zoom: Math.max(map.getZoom(), 16) });
+  if (window.matchMedia('(max-width: 720px)').matches) window.closeSheet();
   inspectPoint(r.lat, r.lon);
 }
 
@@ -1041,6 +1074,7 @@ function setupMap() {
   });
   map.on('click', (e) => {
     if (map.queryRenderedFeatures(e.point, { layers: ['spots'] }).length) return;
+    if (window.matchMedia('(max-width: 720px)').matches) window.closeSheet();   // keep the popup visible
     inspectPoint(e.lngLat.lat, e.lngLat.lng);
   });
   map.on('mouseenter', 'spots', () => { map.getCanvas().style.cursor = 'pointer'; });
