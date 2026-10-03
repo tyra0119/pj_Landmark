@@ -51,6 +51,7 @@ a { color: var(--accent); }
 #panel.loading [data-landmark] { pointer-events: none; opacity: 0.6; }
 .head-controls { display: grid; gap: 8px; margin-top: 12px; }
 .app-name { margin: 0 0 4px; font-size: 11px; color: var(--muted); letter-spacing: 0.04em; }
+.manual-link { float: right; font-size: 12px; letter-spacing: 0; }
 
 .controls { display: grid; gap: 12px; padding-top: 16px; }
 .segmented { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; background: var(--surface); border-radius: 10px; padding: 3px; }
@@ -213,3 +214,11 @@ a { color: var(--accent); }
   .busy { left: 50%; top: 12px; max-width: calc(100vw - 32px); font-size: 13px; }
   .maplibregl-popup-content { max-height: 55vh; }
 }
+.bike-marker { cursor: pointer; }
+.bike-marker.active { padding: 4px 8px 4px 5px; font-size: 14px; box-shadow: 0 0 0 3px #fff, 0 0 0 6px rgba(4, 120, 87, 0.45), 0 2px 8px rgba(0, 0, 0, 0.4); z-index: 2; }
+.bike-marker.active svg { width: 22px; height: 22px; }
+.spot-pin { padding: 3px 8px; border-radius: 6px; background: #0f172a; color: #fff; font: 700 11px/1.2 system-ui, sans-serif; box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35); pointer-events: none; }
+.maplibregl-popup.tucked { display: none; }
+.port-pop { font-size: 12px; line-height: 1.6; }
+.port-head { display: flex; gap: 6px; align-items: center; margin-bottom: 2px; }
+.port-head strong { font-size: 13px; }

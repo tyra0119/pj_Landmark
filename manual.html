@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>使い方｜ランドマーク × 月/太陽 撮影スポット案内</title>
+  <meta name="description" content="ランドマーク × 月/太陽 撮影スポット案内の使い方と、計算の前提・使っているデータ">
+  <style>
+    :root { --text: #1e293b; --muted: #64748b; --line: #e2e8f0; --accent: #0369a1; --hl: #b45309; color-scheme: light; }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #f8fafc; color: var(--text); font-family: "Hiragino Sans", "Noto Sans JP", "Yu Gothic UI", system-ui, sans-serif; line-height: 1.8; }
+    main { max-width: 760px; margin: 0 auto; padding: 32px 20px 64px; background: #fff; min-height: 100vh; }
+    h1 { font-size: 24px; margin: 0 0 4px; }
+    h2 { font-size: 18px; margin: 36px 0 8px; padding-bottom: 6px; border-bottom: 1px solid var(--line); }
+    h3 { font-size: 15px; margin: 20px 0 4px; }
+    p, li { font-size: 15px; }
+    .muted { color: var(--muted); }
+    a { color: var(--accent); }
+    .back { display: inline-block; margin-bottom: 20px; font-size: 14px; }
+    ol, ul { padding-left: 1.4em; }
+    dl { display: grid; grid-template-columns: max-content 1fr; gap: 6px 16px; font-size: 15px; }
+    dt { font-weight: 700; }
+    dd { margin: 0; }
+    .dot { display: inline-block; vertical-align: middle; border-radius: 50%; border: 2px solid #334155; }
+    .key { display: inline-block; vertical-align: middle; width: 20px; height: 16px; border-radius: 4px; border: 2px solid #0284c7; color: #0369a1; font-size: 11px; font-weight: 700; text-align: center; line-height: 12px; }
+    .line { display: inline-block; vertical-align: middle; width: 22px; height: 5px; border-radius: 3px; background: #0ea5e9; box-shadow: 0 0 0 2px #0f172a; }
+    .bike { display: inline-block; vertical-align: middle; padding: 0 6px; border-radius: 999px; background: #047857; color: #fff; font-size: 11px; font-weight: 700; }
+  </style>
+</head>
+<body>
+<main>
+  <a class="back" href="./">← アプリに戻る</a>
+  <h1>使い方</h1>
+  <p class="muted">ランドマーク × 月/太陽 撮影スポット案内</p>
+  <p>月や太陽が、東京スカイツリー・東京タワー・富士山の先端（山頂）にちょうど重なって見える「地上の場所」と「時刻」を探し、そこへ公共交通で行けるかまで案内するアプリです。</p>
+
+  <h2>3つのステップ</h2>
+  <ol>
+    <li><b>ランドマークと月／太陽を選ぶ</b>：画面上部で選びます。富士山は、都心・横浜・田貫湖・朝霧高原・御殿場のどこから見るかも選べます。</li>
+    <li><b>日付を選ぶ</b>：「重なる場所」タブで日付を選びます。次の満月はボタンで選べます。「先端を中心に」は月の真ん中に先端が来る位置、「先端に乗せる」は月の下の縁が先端に触れる位置です。</li>
+    <li><b>場所を選んで行き方を見る</b>：一覧か地図の点を選ぶと、重なる時刻、見え方、天気、最寄り駅と「電車で行けるか」、その場所からの眺め（3D）が出ます。</li>
+  </ol>
+
+  <h2>地図の見方</h2>
+  <dl>
+    <dt><span class="line"></span></dt><dd>その時刻に月や太陽が先端に重なる位置。線に沿って時刻（5分ごと）が付きます。明るい部分は建物に隠れずに見える場所です。</dd>
+    <dt><span class="dot" style="width:14px;height:14px;background:#facc15"></span></dt><dd>重なって見える場所のうち、ランドマークの<b>全体</b>が見える場所</dd>
+    <dt><span class="dot" style="width:10px;height:10px;background:#fff"></span></dt><dd>重なって見える場所のうち、<b>一部</b>（先端など）が見える場所</dd>
+    <dt><span class="key">1</span></dt><dd>月や太陽と重ならない日でも、ランドマークの全体を見渡せる場所（開けて広い順）</dd>
+    <dt>色分け</dt><dd>その場所からランドマークがどこまで見えるか。黄色は先端だけ、オレンジは根元近くまで。薄い灰色は見えない場所です。</dd>
+    <dt>灰色の点線</dt><dd>観測地点の対象外（皇居の中）</dd>
+  </dl>
+  <p>地図のどこをタップしても、その地点からランドマークが見えるか、これから1年で月や太陽が重なる日時を調べます。</p>
+
+  <h2>公共交通の案内</h2>
+  <ul>
+    <li><b>最寄り駅と徒歩時間</b>：2km以内の駅を近い順に2つ。路線と、その日のダイヤ（平日／土休日）の始発・終電を出します。</li>
+    <li><b>電車で行けるか</b>：撮影時刻に、徒歩の時間と準備の5分を加えて判定します。駅に着く必要がある時刻が始発より前なら「始発前」、撮影のあと駅に戻る時刻が終電より後なら「帰りの終電後」です。土日・祝日（振替休日を含む）と年末年始は土休日ダイヤで計算します。</li>
+    <li><b>運行情報</b>：撮影日が今日のときは、最寄り駅の路線の遅れ・見合わせを表示します。</li>
+    <li><span class="bike">1</span> <b>シェアサイクル</b>：電車が動いていない時間だけ表示します。始発前は、出発地の近くで借りて自転車で来て、撮影地点の近くのポートに<b>返す</b>ための「返却できる空き」を、終電後は、撮影のあと撮影地点の近くのポートで<b>借りて帰る</b>ための「借りられる台数」を示します。台数はいまの数です。「地図で見る」を押すと、地図がポートと撮影地点の両方が入る位置に動き、そのポートの自転車マークが大きくなります。</li>
+    <li><b>道案内</b>：Google マップで、現在地からの経路を開きます。</li>
+  </ul>
+
+  <h2>計算の前提と限界</h2>
+  <ul>
+    <li>建物は国土交通省 PLATEAU の3D都市モデル（2025年度中心）、地面は国土地理院の標高を使い、目の高さ1.6mで計算しています。地球の丸みと大気による光の曲がりも補正しています。</li>
+    <li>橋の上は橋面の高さで計算します。川・池・海の上、車道、高速道路と鉄道の高架とその下、建物の中、皇居の中は候補から外しています。</li>
+    <li>街路樹、電線、データ作成後に建った建物は計算に入っていません。現地で確認してください。</li>
+    <li>富士山周辺（田貫湖・朝霧高原・御殿場）は公共交通オープンデータに駅のデータがないため、交通の案内は「範囲外」と表示します。</li>
+    <li>天気は2週間以内なら予報の雲量、それより先は過去10年に同じ月・時間帯で晴れていた割合です。</li>
+    <li>太陽を直接見たり、減光フィルターなしで撮影したりしないでください。</li>
+  </ul>
+
+  <h2>使っているデータ</h2>
+  <ul>
+    <li>公共交通オープンデータセンター：路線・駅・時刻表・運行情報、ドコモ・バイクシェアとHELLO CYCLINGのシェアサイクル（GBFS）。運行情報と台数は中継サーバーを経由して取得し、アクセストークンはブラウザに置いていません。</li>
+    <li>国土交通省 Project PLATEAU：建物・橋・水域・道路（CC BY 4.0）</li>
+    <li>国土地理院：地理院タイル（地図・標高）</li>
+    <li>OpenStreetMap：高速道路・鉄道の高架、湖・池、皇居の範囲（© OpenStreetMap contributors、ODbL）</li>
+    <li>Open-Meteo：天気予報（気象庁モデル）と過去の天気（ERA5）</li>
+    <li>Astronomy Engine：月・太陽の位置の計算</li>
+  </ul>
+
+  <h2>お問い合わせ</h2>
+  <p id="contact">（準備中）</p>
+</main>
+</body>
+</html>

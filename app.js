@@ -731,7 +731,7 @@ async function accessHTML(lat, lon, t) {
   const verdict = stations.length ? Transit.trainVerdict(stations[0], t)?.verdict : null;
   if (ports.length && verdict && verdict !== 'ok') {
     const comeByBike = verdict === 'before-first';
-    html += `<div class="bikes"><div class="access-sub">${comeByBike
+    html += `<div class="bikes" data-mode="${comeByBike ? 'return' : 'borrow'}"><div class="access-sub">${comeByBike
       ? 'シェアサイクル：始発前なので、自転車で来るならここに返せます'
       : 'シェアサイクル：終電後なので、撮影のあとここで借りて帰れます'}</div>` +
       ports.map((p, i) => {
@@ -750,31 +750,90 @@ async function fillAccess(el, lat, lon, t, popup) {
   el.innerHTML = '<p class="small muted">交通を調べています…</p>';
   fitPopup(popup);
   el.innerHTML = await accessHTML(lat, lon, t);
-  if (el.querySelector('.bikes')) showPortMarkers(lat, lon, popup);
-  else { bikeMarkers.forEach((m) => m.remove()); bikeMarkers = []; bikePorts = []; }
-  el.querySelectorAll('[data-port]').forEach((b) => b.addEventListener('click', () => {
-    const p = bikePorts[Number(b.dataset.port)];
-    if (p) map.flyTo({ center: [p.lon, p.lat], zoom: Math.max(map.getZoom(), 17) });
-  }));
+  const bikes = el.querySelector('.bikes');
+  if (bikes) showPortMarkers(lat, lon, popup, bikes.dataset.mode);
+  else { clearPortView(); bikeMarkers.forEach((m) => m.remove()); bikeMarkers = []; bikePorts = []; }
+  el.querySelectorAll('[data-port]').forEach((b) => b.addEventListener('click', () => showPort(Number(b.dataset.port))));
   fitPopup(popup);
 }
 
 // numbered bicycle markers for the ports listed in the open popup
 let bikeMarkers = [];
 let bikePorts = [];
-async function showPortMarkers(lat, lon, popup) {
+let bikeCtx = null;      // the spot the ports belong to: {lat, lon, popup, mode}
+async function showPortMarkers(lat, lon, popup, mode) {
+  clearPortView();
   bikeMarkers.forEach((m) => m.remove());
   bikeMarkers = [];
+  bikeCtx = { lat, lon, popup, mode };
   bikePorts = await Transit.portsNear(lat, lon, 500, 2);
   bikeMarkers = bikePorts.map((p, i) => {
     const el = document.createElement('div');
     el.className = 'bike-marker';
     el.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="6" cy="16" r="4"/><circle cx="18" cy="16" r="4"/><path d="M6 16l4-8h5l3 8M10 8l2 8h-2M14 6h3"/></svg><b>${i + 1}</b>`;
     el.title = p.n ?? 'シェアサイクル';
+    el.addEventListener('click', (e) => { e.stopPropagation(); showPort(i); });
     return new maplibregl.Marker({ element: el }).setLngLat([p.lon, p.lat]).addTo(map);
   });
   // the markers belong to this popup and go with it
-  popup?.once('close', () => { if (bikePorts.length && popup === spotPopup) { bikeMarkers.forEach((m) => m.remove()); bikeMarkers = []; } });
+  popup?.once('close', () => { if (bikePorts.length && popup === spotPopup) { clearPortView(); bikeMarkers.forEach((m) => m.remove()); bikeMarkers = []; } });
+}
+
+// "地図で見る": the spot's popup steps aside, the map frames the spot and the port,
+// and the port gets its own label; going back brings the spot's popup again.
+let portPopup = null;
+let spotPin = null;
+function clearPortView() {
+  const pp = portPopup;
+  portPopup = null;
+  pp?.remove();
+  spotPin?.remove();
+  spotPin = null;
+  bikeMarkers.forEach((m) => m.getElement().classList.remove('active'));
+  bikeCtx?.popup?.getElement()?.classList.remove('tucked');
+}
+function showPort(i) {
+  const p = bikePorts[i];
+  if (!p || !bikeCtx) return;
+  const { lat, lon, popup, mode } = bikeCtx;
+  clearPortView();
+  popup?.getElement()?.classList.add('tucked');
+  bikeMarkers[i]?.getElement().classList.add('active');
+  const pin = document.createElement('div');
+  pin.className = 'spot-pin';
+  pin.textContent = '撮影地点';
+  spotPin = new maplibregl.Marker({ element: pin, anchor: 'bottom', offset: [0, -6] }).setLngLat([lon, lat]).addTo(map);
+
+  // frame both; the map already keeps clear of the side panel on wide screens,
+  // on phones the bottom sheet covers the lower part
+  const phone = window.matchMedia('(max-width: 720px)').matches;
+  const panel = document.getElementById('panel').getBoundingClientRect();
+  const view = map.getContainer().getBoundingClientRect();
+  const pad = { top: 150, right: 70, bottom: 50, left: 50 };
+  if (phone) pad.bottom = Math.max(50, Math.min(view.bottom - panel.top + 30, view.height - pad.top - 120));
+  map.fitBounds([[Math.min(lon, p.lon), Math.min(lat, p.lat)], [Math.max(lon, p.lon), Math.max(lat, p.lat)]],
+    { padding: pad, maxZoom: 17.5, duration: 600 });
+
+  const back = mode === 'return';
+  const count = p.status ? (back ? `いま返却できる空き ${p.status.docks ?? '?'}台分` : `いま借りられる ${p.status.bikes ?? '?'}台`) : '';
+  const route = `https://www.google.com/maps/dir/?api=1&destination=${p.lat.toFixed(6)},${p.lon.toFixed(6)}&travelmode=bicycling`;
+  const pp = portPopup = new maplibregl.Popup({ maxWidth: '260px', offset: 18, closeOnClick: false })
+    .setLngLat([p.lon, p.lat])
+    .setHTML(`<div class="port-pop"><div class="port-head"><span class="bike-badge">${i + 1}</span><strong>${p.n ?? 'シェアサイクルのポート'}</strong></div>
+      <div class="muted">${back ? '自転車をここに返して、' : 'ここで借りて帰れます。'}撮影地点は${compass(azimuthTo(p.lat, p.lon, lat, lon))}へ${p.d}m</div>
+      ${count ? `<div>${count}</div>` : ''}
+      <div class="port-actions"><a class="text-btn" href="${route}" target="_blank" rel="noopener">${back ? 'ここまでの自転車ルート' : '行き方'}</a><button class="text-btn" data-back>撮影地点の案内に戻る</button></div></div>`)
+    .addTo(map);
+  map.once('moveend', () => fitPopup(pp));
+  pp.getElement().querySelector('[data-back]').addEventListener('click', () => backToSpot());
+  pp.on('close', () => { if (portPopup === pp) backToSpot(); });
+}
+function backToSpot() {
+  const ctx = bikeCtx;
+  clearPortView();
+  if (!ctx?.popup?.isOpen()) return;
+  map.flyTo({ center: [ctx.lon, ctx.lat], duration: 500 });
+  map.once('moveend', () => fitPopup(ctx.popup));
 }
 
 // Keep a popup fully on screen. Its content grows after it opens (transit, the
