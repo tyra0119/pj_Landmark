@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>スカイツリー × 月</title>
+  <meta name="description" content="PLATEAUの3D都市モデルで、月や太陽がスカイツリーの先端に重なって見える地上の場所と時刻を探すアプリ">
+  <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="map"></div>
+
+  <aside id="panel">
+    <header class="panel-head">
+      <button id="sheet-toggle" class="sheet-handle" aria-label="パネルを開閉"></button>
+      <h1>スカイツリー × <span id="title-body">月</span></h1>
+      <p class="lead">月や太陽がスカイツリーの先端に重なって見える、地上の場所と時刻を探します。</p>
+    </header>
+
+    <div class="panel-body">
+      <section class="controls">
+        <div class="segmented" role="radiogroup" aria-label="天体">
+          <button data-body="Moon" class="active" role="radio" aria-checked="true">月</button>
+          <button data-body="Sun" role="radio" aria-checked="false">太陽</button>
+        </div>
+
+        <label class="field">
+          <span>日付</span>
+          <input type="date" id="date">
+        </label>
+        <div id="full-moons" class="chips" aria-label="次の満月"></div>
+
+        <div class="segmented small" role="radiogroup" aria-label="重ね方">
+          <button data-mode="center" class="active" role="radio" aria-checked="true">先端を中心に</button>
+          <button data-mode="perch" role="radio" aria-checked="false">先端に乗せる</button>
+        </div>
+      </section>
+
+      <section id="point-section" hidden>
+        <h2>選んだ地点</h2>
+        <div id="point-info"></div>
+      </section>
+
+      <section>
+        <h2>重なって見える場所</h2>
+        <p id="summary" class="muted">計算中…</p>
+        <ol id="spots" class="spots"></ol>
+      </section>
+
+      <section class="legend">
+        <h2>スカイツリーの見え方</h2>
+        <label class="toggle"><input type="checkbox" id="heat-toggle" checked> 地図に表示</label>
+        <div class="legend-bar" id="legend-bar"></div>
+        <div class="legend-labels"><span>見えない</span><span>先端だけ</span><span>ほぼ全体</span></div>
+        <p class="muted small">地図をタップすると、その地点から重なる日時を1年分探します。</p>
+        <button id="locate" class="btn">現在地から探す</button>
+      </section>
+
+      <footer class="notes">
+        <p>街路樹・電線・高架道路・データ作成後の新しい建物は計算に入っていません。現地で確認してください。</p>
+        <p>建物：<a href="https://www.mlit.go.jp/plateau/" target="_blank" rel="noopener">国土交通省 Project PLATEAU</a>（CC BY 4.0）<br>
+          標高・地図：<a href="https://maps.gsi.go.jp/development/ichiran.html" target="_blank" rel="noopener">地理院タイル</a><br>
+          天体計算：<a href="https://github.com/cosinekitty/astronomy" target="_blank" rel="noopener">Astronomy Engine</a></p>
+        <p id="data-info" class="muted small"></p>
+      </footer>
+    </div>
+  </aside>
+
+  <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/astronomy-engine@2.1.19/astronomy.browser.min.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
